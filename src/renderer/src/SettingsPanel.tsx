@@ -11,6 +11,7 @@ import {
   ListChecks,
   Plus,
   Settings2,
+  Users,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -20,9 +21,10 @@ import { ProfilesField } from './Profiles'
 import { WorkspacesView } from './WorkspacesView'
 import { TimePicker } from './TimePicker'
 import { AddCalendarMenu, AddTrackerMenu, TrackerBadge, TRACKER_HINT, trackerInfo } from './Trackers'
+import { figmaTeamIds } from '../../shared/figma'
 import { calendarInfo } from '../../shared/calendars'
 import { PROFILE_LABEL, type Profiles } from '../../shared/profiles'
-import type { TrackerName } from '../../shared/trackers'
+import { projectTrackers, type TrackerName } from '../../shared/trackers'
 import { useEffect, useState, type FormEvent } from 'react'
 import type { GithubAccounts, NotificationAccess, Settings, SettingsPatch } from '../../shared/types'
 
@@ -62,7 +64,14 @@ function nextTime(times: string[]): string {
 
 type TextKey = Exclude<
   keyof SettingsPatch,
-  'onboarded' | 'githubAccount' | 'workspace' | 'trackers' | 'calendar' | 'projects' | 'wrapupTimes'
+  | 'onboarded'
+  | 'githubAccount'
+  | 'workspace'
+  | 'trackers'
+  | 'calendar'
+  | 'projects'
+  | 'wrapupTimes'
+  | 'figmaTeams'
 >
 
 export function SettingsPanel({
@@ -89,6 +98,8 @@ export function SettingsPanel({
   const [accounts, setAccounts] = useState<GithubAccounts | null>(lastAccounts)
   const [access, setAccess] = useState<NotificationAccess | null>(null)
   const [profiles, setProfiles] = useState<Profiles | null>(null)
+  // The teams field as typed; saved as the team ids it holds
+  const [teamsText, setTeamsText] = useState<string | null>(null)
 
   useEffect(() => {
     // Back from System Settings, the window regains focus: read the permission again
@@ -136,6 +147,8 @@ export function SettingsPanel({
   const chosenCalendar = patch.calendar ?? settings.calendar
   const calendar = chosenCalendar === 'none' ? null : chosenCalendar
   const setTrackers = (next: TrackerName[]) => setPatch(current => ({ ...current, trackers: next }))
+
+  const withProjects = projectTrackers(trackers).length > 0
 
   const field = (key: TextKey) => ({
     value: patch[key] ?? '',
@@ -201,7 +214,7 @@ export function SettingsPanel({
       </div>
 
       <section className="field trackers">
-        <span>Gestion de projet</span>
+        <span>Outils</span>
         {trackers.length === 0 && (
           <small>Aucun outil : Flux ne suit que tes PR GitHub et tes notes.</small>
         )}
@@ -270,6 +283,39 @@ export function SettingsPanel({
                 <small>Linear → Settings → Security &amp; access → Personal API keys.</small>
               </>
             )}
+
+            {name === 'figma' && (
+              <>
+                <InputShell icon={Users}>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    spellCheck={false}
+                    aria-label="Équipes Figma"
+                    placeholder="https://www.figma.com/files/team/…"
+                    value={teamsText ?? (patch.figmaTeams ?? settings.figmaTeams).join(', ')}
+                    onChange={event => {
+                      const text = event.target.value
+                      setTeamsText(text)
+                      setPatch(current => ({ ...current, figmaTeams: figmaTeamIds(text) }))
+                    }}
+                  />
+                </InputShell>
+                <InputShell icon={KeyRound} stored={settings.hasFigmaToken && !patch.figmaToken}>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    aria-label="Jeton Figma"
+                    placeholder={settings.hasFigmaToken ? 'Remplacer le jeton' : 'Jeton d’accès personnel'}
+                    {...field('figmaToken')}
+                  />
+                </InputShell>
+                <small>
+                  Équipe : colle le lien de sa page dans Figma. Jeton : Figma → Settings → Security → Personal
+                  access tokens, en lecture sur les commentaires, les projets et ton profil.
+                </small>
+              </>
+            )}
           </div>
         ))}
         <AddTrackerMenu chosen={trackers} onAdd={name => setTrackers([...trackers, name])} />
@@ -282,14 +328,14 @@ export function SettingsPanel({
           <span>
             {(settings.projects ?? []).length > 0
               ? (settings.projects ?? []).map(project => project.key).join(', ')
-              : trackers.length > 0
+              : withProjects
                 ? 'Aucun projet suivi'
                 : 'Connecte Jira ou Linear pour suivre des projets'}
           </span>
           <button
             type="button"
             className="pill glass small"
-            disabled={trackers.length === 0}
+            disabled={!withProjects}
             onClick={() => setView('workspaces')}
           >
             Gérer

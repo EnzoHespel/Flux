@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { RANKS } from '../../shared/ranks'
 import type { WrapupDone, WrapupFocus, WrapupOutcome, WrapupView as Wrapup } from '../../shared/types'
-import { clock, displayTitle, waitingFor } from './format'
+import { clock, displayTitle, refLabel, waitingFor } from './format'
 import { menuOfLine, showMenu } from './navigation'
 import { rankStyle } from './rankStyle'
 
@@ -42,7 +42,7 @@ function Row({ line, checked, locked, meta, side, accent, onCheck, onOpen }: Row
         <span className="check-title">
           {line.ref && (
             <span className="check-ref" style={accent ? { color: accent } : undefined}>
-              {line.ref}
+              {refLabel(line.ref)}
             </span>
           )}
           {displayTitle(line.title)}

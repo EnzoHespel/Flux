@@ -24,7 +24,7 @@ export interface Reconciled {
   linked: Array<{ id: string; links: string[] }>
 }
 
-const REF_PATTERN = /^([a-z0-9_-]+#\d+|[A-Z]{2,5}-\d+)$/
+const REF_PATTERN = /^([a-z0-9_-]+#\d+|[A-Z]{2,5}-\d+|figma:[A-Za-z0-9]+)$/
 
 function slug(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')

@@ -14,6 +14,7 @@ const LABELS: Record<ActionKind, string> = {
   cadrage: 'Cadrer',
   resume: 'Y aller',
   free: 'Lancer un thread',
+  figma: 'Ouvrir dans Figma',
 }
 
 const DEFAULT_PROMPTS: Partial<Record<ActionKind, string>> = {
@@ -39,7 +40,7 @@ export function promptFor(
   url: string,
   overrides: Partial<Record<ActionKind, string>> = CONFIG.prompts,
 ): string | undefined {
-  if (kind === 'ship' || kind === 'resume') return undefined
+  if (kind === 'ship' || kind === 'resume' || kind === 'figma') return undefined
   const template = overrides[kind] ?? DEFAULT_PROMPTS[kind]
   return template?.replaceAll('{url}', url).replaceAll('{ref}', ref)
 }

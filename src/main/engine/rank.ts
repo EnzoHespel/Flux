@@ -1,4 +1,5 @@
-import type { ActionKind, Item, Rank, Signal } from '../../shared/types'
+import { figmaRef } from '../../shared/figma'
+import type { ActionKind, CommentLine, Item, Rank, Signal } from '../../shared/types'
 import { CONFIG } from '../config'
 
 const BOTS = new Set(CONFIG.github.bots)
@@ -346,4 +347,34 @@ export function itemFromTicket(ticket: Ticket, ctx: RankContext): Item {
   const ball = signals.length > 0 ? 'me' : asked ? 'others' : parked ? 'parked' : stale ? 'dormant' : 'others'
   const line = asked ? { asked: { excerpt: asked.excerpt, at: asked.at, url: asked.url } } : {}
   return { ...base, terminal: false, ball, signals, ...line }
+}
+
+// A Figma file whose comments Flux read
+export interface FigmaFile {
+  key: string
+  name: string
+  url: string
+  // When Flux last read its comments
+  readAt: string
+  // A thread of the file involves me: I wrote in it, or someone named me
+  involved: boolean
+  // The threads waiting on my answer, newest first
+  pending: CommentLine[]
+}
+
+// One task per file, listing its comments; once all are answered the file is done and its topic closes
+export function itemFromFigmaFile(file: FigmaFile): Item {
+  const ref = figmaRef(file.key)
+  const base = { ref, refs: [ref], kind: 'figma' as const, title: file.name, url: file.url, mine: false }
+  if (file.pending.length === 0) return { ...base, terminal: true, ball: 'others', signals: [] }
+  const times = file.pending.map(comment => comment.at).sort()
+  const detail = `${plural(file.pending.length, 'commentaire')} Figma`
+  return {
+    ...base,
+    terminal: false,
+    ball: 'me',
+    // Waiting since the oldest comment; the newest one notifies
+    signals: [signal(ref, 'comments', 3, detail, 'figma', times[0], times[times.length - 1])],
+    comments: file.pending,
+  }
 }

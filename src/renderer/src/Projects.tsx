@@ -1,7 +1,7 @@
 import { Check, GitPullRequest, GripVertical, LoaderCircle, Plus, X } from 'lucide-react'
 import { useEffect, useState, type DragEvent, type KeyboardEvent } from 'react'
 import type { ProjectOption, ProjectOptions, TrackedProject } from '../../shared/types'
-import type { TrackerName } from '../../shared/trackers'
+import { projectTrackers, type TrackerName } from '../../shared/trackers'
 import { TrackerBadge, trackerInfo } from './Trackers'
 
 // Listing projects takes a few seconds: keep the last answer while the panel comes and goes
@@ -60,7 +60,7 @@ function RepoInput({
 }
 
 export function ProjectsPicker({
-  trackers,
+  trackers: tools,
   value,
   onChange,
 }: {
@@ -68,6 +68,8 @@ export function ProjectsPicker({
   value: TrackedProject[]
   onChange(next: TrackedProject[]): void
 }) {
+  // Only ticket tools have projects: Figma never becomes a workspace
+  const trackers = projectTrackers(tools)
   const [options, setOptions] = useState<ProjectOptions | null>(lastOptions)
   const [loading, setLoading] = useState(false)
   // Key of the project being dragged, and of the one it would land on

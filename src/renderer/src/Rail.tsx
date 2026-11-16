@@ -3,7 +3,7 @@ import { Fragment, useEffect, useRef, type ReactNode } from 'react'
 import { RANKS } from '../../shared/ranks'
 import type { Item, Rank, TopicView } from '../../shared/types'
 import { LinkIcon } from './Brand'
-import { displayTitle, waitingFor } from './format'
+import { displayTitle, refLabel, waitingFor } from './format'
 import { looseId, menuOfItem, menuOfView, showMenu } from './navigation'
 import { rankStyle, tint } from './rankStyle'
 
@@ -27,7 +27,7 @@ interface CardProps {
 function Card({ view, selected, fresh, onSelect }: CardProps) {
   const element = useRef<HTMLButtonElement>(null)
   const busy = view.threads.some(thread => thread.status === 'busy')
-  const ref = view.topic.links[0] ?? 'Note'
+  const ref = view.topic.links[0] ? refLabel(view.topic.links[0]) : 'Note'
   const state = view.items.find(item => item.kind === 'ticket' && item.state)?.state
 
   useEffect(() => {
@@ -86,7 +86,7 @@ function LooseCard({ item, selected, onSelect }: LooseCardProps) {
       <span className="card-head">
         <strong className="card-link">
           <LinkIcon url={item.url} size={12} />
-          {item.ref}
+          {refLabel(item.ref)}
         </strong>
         <StateTag state={item.state} />
         {item.asked && <span className="age">{waitingFor(item.asked.at)}</span>}

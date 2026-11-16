@@ -1,6 +1,7 @@
 import { Check, CircleAlert, LoaderCircle, Minus, Waves } from 'lucide-react'
 import { useEffect, useState, type CSSProperties } from 'react'
 
+import { isTracker } from '../../shared/trackers'
 import type { Rank, Settings, SourceName } from '../../shared/types'
 
 import { BrandIcon, type Brand } from './Brand'
@@ -16,13 +17,14 @@ const SOURCES: Array<{ name: SourceName; label: string; brand: Brand }> = [
   { name: 'github', label: 'Pull requests', brand: 'github' },
   { name: 'jira', label: 'Tickets Jira', brand: 'jira' },
   { name: 'linear', label: 'Tickets Linear', brand: 'linear' },
+  { name: 'figma', label: 'Commentaires Figma', brand: 'figma' },
   { name: 'calendar', label: 'Agenda', brand: 'calendar' },
   { name: 'agents', label: 'Sessions Claude', brand: 'claude' },
 ]
 
 // A project tool you did not choose has no row at all
 function shown(name: SourceName, settings: Settings | null): boolean {
-  if (name !== 'jira' && name !== 'linear') return true
+  if (!isTracker(name)) return true
   return settings ? settings.trackers.includes(name) : name === 'linear'
 }
 
@@ -38,6 +40,7 @@ function sourceState(
   if (name in progress) return progress[name] ? 'ok' : 'error'
   if (name === 'linear' && settings && !settings.hasLinearKey) return 'off'
   if (name === 'jira' && settings && !settings.hasJiraToken) return 'off'
+  if (name === 'figma' && settings && (!settings.hasFigmaToken || settings.figmaTeams.length === 0)) return 'off'
   if (name === 'calendar' && settings && (!settings.calendar || !settings.hasCalendarUrl)) return 'off'
   return 'loading'
 }

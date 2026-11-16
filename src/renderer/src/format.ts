@@ -1,3 +1,4 @@
+import { figmaKey } from '../../shared/figma'
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
@@ -22,10 +23,15 @@ export function until(iso: string, now = Date.now()): string {
 
 export function displayTitle(title: string): string {
   const plain = title
-    .replace(/^(?:[a-z0-9_-]+#\d+|[A-Z]{2,5}-\d+) — /, '')
+    .replace(/^(?:[a-z0-9_-]+#\d+|[A-Z]{2,5}-\d+|figma:[A-Za-z0-9]+) — /, '')
     .replace(/^(?:\[[^\]]+\]\s*)+/, '')
     .replace(/^[a-z]+(?:\([^)]*\))?!?:\s*/, '')
   return plain ? `${plain.charAt(0).toUpperCase()}${plain.slice(1)}` : title
 }
 
 export { markedBlocked } from '../../shared/titles'
+
+// How a ref reads on screen: a Figma file goes by the tool, its key says nothing
+export function refLabel(ref: string): string {
+  return figmaKey(ref) ? 'Figma' : ref
+}

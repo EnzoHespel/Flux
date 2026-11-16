@@ -564,6 +564,26 @@ button.chip:hover {
   font-weight: 400;
 }
 
+/* Ten comments on one file stay readable without pushing the actions away */
+.hero-comments {
+  max-height: min(38vh, 300px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.hero-comments .hero-asked-link {
+  font-size: 15px;
+  font-weight: 400;
+}
+
+.hero-comments .hero-asked-link strong {
+  font-weight: 600;
+}
+
+.hero-comments .hero-asked-link svg {
+  color: var(--text-3);
+}
+
 .hero-blocked {
   align-self: flex-start;
   padding: 5px 12px;

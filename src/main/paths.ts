@@ -31,6 +31,8 @@ export const SETTINGS_FILE = join(STATE_DIR, 'settings.json')
 export const SECRETS_FILE = join(STATE_DIR, 'secrets.json')
 export const TRIAGE_FILE = join(STATE_DIR, 'triage.json')
 export const TRIAGE_ASKED_FILE = join(STATE_DIR, 'triage-asked.json')
+// What Figma last answered: teams, files and the comments waiting on you
+export const FIGMA_FILE = join(STATE_DIR, 'figma.json')
 // One wrap-up journal per day, named after its date
 export const WRAPUP_DIR = join(STATE_DIR, 'wrapup')
 // What the daily skill wrote, one file per day

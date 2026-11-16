@@ -1,10 +1,10 @@
-import { ArrowUpRight, Check, Hand, Hourglass, ListChecks, LockOpen, MessageCircleQuestion, Pencil } from 'lucide-react'
+import { ArrowUpRight, Check, Hand, Hourglass, LockOpen, MessageCircleQuestion, Pencil } from 'lucide-react'
 import { useEffect, useState, type MouseEvent } from 'react'
 import type { LinkMenu } from '../../shared/links'
 import { RANKS } from '../../shared/ranks'
-import type { AskedLine, Item, ProposedAction, TopicView } from '../../shared/types'
+import type { AskedLine, CommentLine, Item, ProposedAction, TopicView } from '../../shared/types'
 import { BrandIcon, LinkIcon } from './Brand'
-import { displayTitle, markedBlocked, waitingFor } from './format'
+import { displayTitle, markedBlocked, refLabel, waitingFor } from './format'
 import { menuOfItem, menuOfView, showMenu } from './navigation'
 import { rankStyle } from './rankStyle'
 import { useDraft } from './useDraft'
@@ -23,6 +23,26 @@ function AskedList({ lines }: { lines: AskedLine[] }) {
             <span>
               {line.excerpt}
               <span className="hero-asked-age"> · ma question, sans réponse depuis {waitingFor(line.at)}</span>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// Figma threads waiting on my answer, each opening Figma on the comment
+function CommentList({ comments }: { comments: CommentLine[] }) {
+  if (comments.length === 0) return null
+  return (
+    <ul className="hero-asked hero-comments">
+      {comments.map(comment => (
+        <li key={comment.id}>
+          <button type="button" className="hero-asked-link" onClick={() => void window.flux.openExternal(comment.url)}>
+            <BrandIcon brand="figma" size={14} />
+            <span>
+              <strong>{comment.author}</strong> : {comment.excerpt}
+              <span className="hero-asked-age"> · depuis {waitingFor(comment.at)}</span>
             </span>
           </button>
         </li>
@@ -116,7 +136,7 @@ export function Hero({ view, position }: HeroProps) {
 
       <p className="hero-meta">
         {topic.links.slice(0, 3).map(link => (
-          <span key={link}>{link}</span>
+          <span key={link}>{refLabel(link)}</span>
         ))}
         {view.since && <span>{waitingFor(view.since)} d'attente</span>}
         {position && <span>{position}</span>}
@@ -137,6 +157,8 @@ export function Hero({ view, position }: HeroProps) {
           )}
         </ul>
       )}
+
+      <CommentList comments={view.items.flatMap(item => item.comments ?? [])} />
 
       {view.signals.length === 0 && <AskedList lines={askedLines(view.items)} />}
 
@@ -159,17 +181,6 @@ export function Hero({ view, position }: HeroProps) {
             {action.label}
           </button>
         ))}
-        {topic.status === 'inbox' && (
-          <button
-            type="button"
-            className="round glass"
-            aria-label="Passer en tâche"
-            title="Passer en tâche"
-            onClick={() => attempt(window.flux.updateTopic(topic.id, { status: 'open' }))}
-          >
-            <ListChecks size={17} aria-hidden="true" />
-          </button>
-        )}
         {topic.blocked ? (
           <button
             type="button"

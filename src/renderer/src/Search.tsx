@@ -2,6 +2,7 @@ import { ArrowRight, Search as SearchIcon, StickyNote } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { AppState } from '../../shared/types'
 import { LinkIcon } from './Brand'
+import { refLabel } from './format'
 import { searchFlux, showMenu, TAB_LABEL, type SearchResult } from './navigation'
 import { rankStyle, tint } from './rankStyle'
 
@@ -31,7 +32,7 @@ function Lead({ result }: { result: SearchResult }) {
   return (
     <>
       <LinkIcon url={result.url ?? undefined} size={13} />
-      {result.ref}
+      {refLabel(result.ref)}
     </>
   )
 }

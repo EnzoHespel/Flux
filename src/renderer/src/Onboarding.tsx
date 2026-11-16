@@ -15,7 +15,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import { CALENDARS, calendarInfo, type CalendarName } from '../../shared/calendars'
 import { PROFILE_LABEL, type ProfileId, type Profiles } from '../../shared/profiles'
-import { TRACKERS, type TrackerName } from '../../shared/trackers'
+import { figmaTeamIds } from '../../shared/figma'
+import { isTracker, projectTrackers, TRACKERS, type TrackerName } from '../../shared/trackers'
 import type { CheckResult, NotificationAccess, Rank, Settings, TrackedProject } from '../../shared/types'
 
 import { BrandIcon, type Brand } from './Brand'
@@ -32,6 +33,7 @@ type StepKey =
   | 'tools'
   | 'jira'
   | 'linear'
+  | 'figma'
   | 'projects'
   | 'calendar'
   | 'notifications'
@@ -50,7 +52,7 @@ interface Step {
 }
 
 // Steps that connect a source, numbered in the eyebrow
-const CONNECTIONS: StepKey[] = ['github', 'jira', 'linear', 'calendar']
+const CONNECTIONS: StepKey[] = ['github', 'jira', 'linear', 'figma', 'calendar']
 
 const ALL_STEPS: Record<StepKey, Omit<Step, 'eyebrow'> & { eyebrow?: string }> = {
   welcome: {
@@ -80,9 +82,9 @@ const ALL_STEPS: Record<StepKey, Omit<Step, 'eyebrow'> & { eyebrow?: string }> =
     key: 'tools',
     rank: 5,
     icon: SquareKanban,
-    eyebrow: 'Gestion de projet',
-    title: 'Où vivent tes tickets ?',
-    text: 'Choisis les outils que ton équipe utilise. Flux ne demandera que leurs clefs, et tu pourras en ajouter plus tard dans les réglages.',
+    eyebrow: 'Tes outils',
+    title: 'Où vit ton travail ?',
+    text: 'Choisis les outils que ton équipe utilise, pour les tickets comme pour les maquettes. Flux ne demandera que leurs clefs, et tu pourras en ajouter plus tard dans les réglages.',
   },
   jira: {
     key: 'jira',
@@ -104,6 +106,14 @@ const ALL_STEPS: Record<StepKey, Omit<Step, 'eyebrow'> & { eyebrow?: string }> =
       placeholder: 'lin_api_…',
       saved: settings => settings.hasLinearKey,
     },
+  },
+  figma: {
+    key: 'figma',
+    rank: 5,
+    icon: SquareKanban,
+    title: 'Figma',
+    text: 'Le lien de ton équipe et un jeton personnel pour suivre les commentaires qui t’attendent : une tâche par fichier, qui part une fois répondu.',
+    help: 'Équipe : colle le lien de sa page dans Figma. Jeton : Figma → Settings → Security → Personal access tokens, en lecture sur les commentaires, les projets et ton profil.',
   },
   projects: {
     key: 'projects',
@@ -160,8 +170,8 @@ function buildSteps(trackers: TrackerName[], profile: ProfileId, twoProfiles: bo
     ...(profile === 'pro' ? (['profiles'] as const) : []),
     'github',
     'tools',
-    ...(['jira', 'linear'] as const).filter(name => trackers.includes(name)),
-    ...(trackers.length > 0 ? (['projects'] as const) : []),
+    ...(['jira', 'linear', 'figma'] as const).filter(name => trackers.includes(name)),
+    ...(projectTrackers(trackers).length > 0 ? (['projects'] as const) : []),
     'calendar',
     'notifications',
     'done',
@@ -239,6 +249,12 @@ interface JiraDraft {
   token: string
 }
 
+interface FigmaDraft {
+  // The team links as typed
+  teams: string
+  token: string
+}
+
 export function Onboarding({ onTint, onDone }: { onTint(style: RankStyle): void; onDone(): void }) {
   const [index, setIndex] = useState(0)
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -246,6 +262,7 @@ export function Onboarding({ onTint, onDone }: { onTint(style: RankStyle): void;
   const [calendar, setCalendar] = useState<CalendarName | null>(null)
   const [value, setValue] = useState('')
   const [jira, setJira] = useState<JiraDraft>({ site: '', email: '', token: '' })
+  const [figma, setFigma] = useState<FigmaDraft>({ teams: '', token: '' })
   const [status, setStatus] = useState<Status>({ state: 'idle' })
   const [github, setGithub] = useState<Status>({ state: 'idle' })
   const [access, setAccess] = useState<NotificationAccess | null>(null)
@@ -266,6 +283,7 @@ export function Onboarding({ onTint, onDone }: { onTint(style: RankStyle): void;
       setTrackers(loaded.trackers)
       setCalendar(loaded.calendar)
       setJira({ site: loaded.jiraSite, email: loaded.jiraEmail, token: '' })
+      setFigma({ teams: loaded.figmaTeams.join(', '), token: '' })
     })
     void window.flux.profiles().then(loaded => {
       setProfiles(loaded)
@@ -352,6 +370,24 @@ export function Onboarding({ onTint, onDone }: { onTint(style: RankStyle): void;
     setJira(current => ({ ...current, token: '' }))
   }
 
+  const figmaSaved = Boolean(settings?.hasFigmaToken && settings.figmaTeams.length > 0)
+  const figmaTyped = Boolean(figma.token.trim())
+  const figmaTeams = figmaTeamIds(figma.teams)
+
+  const saveFigma = async () => {
+    setStatus({ state: 'checking' })
+    const result = await window.flux.checkFigma(figma.token, figmaTeams)
+    setStatus({ state: 'done', ...result })
+    if (!result.ok) return
+    await window.flux.saveSettings({ figmaTeams, figmaToken: figma.token.trim() })
+    await reload()
+    setFigma(current => ({ ...current, token: '' }))
+  }
+
+  // Teams changed under a token already saved: kept as typed, the scanner reports a wrong one
+  const figmaTeamsChanged =
+    figmaTeams.length > 0 && figmaTeams.join(',') !== (settings?.figmaTeams ?? []).join(',')
+
   const verified = status.state === 'done' && status.ok
 
   const submit = (event: FormEvent) => {
@@ -375,6 +411,10 @@ export function Onboarding({ onTint, onDone }: { onTint(style: RankStyle): void;
       return next()
     }
     if (step.key === 'jira' && jiraTyped && !verified) return void saveJira()
+    if (step.key === 'figma' && figmaTyped && !verified) return void saveFigma()
+    if (step.key === 'figma' && !figmaTyped && figmaTeamsChanged && settings?.hasFigmaToken) {
+      void window.flux.saveSettings({ figmaTeams }).then(reload)
+    }
     if (secret && value.trim() && !verified) return void saveSecret(secret.name)
     next()
   }
@@ -395,7 +435,8 @@ export function Onboarding({ onTint, onDone }: { onTint(style: RankStyle): void;
       : step.secret
   const help = step.key === 'calendar' && calendar ? calendarInfo(calendar).help : step.help
   const saved = secret && settings ? secret.saved(settings) : false
-  const pending = (secret && value.trim()) || (step.key === 'jira' && jiraTyped)
+  const pending =
+    (secret && value.trim()) || (step.key === 'jira' && jiraTyped) || (step.key === 'figma' && figmaTyped)
   const primary = (() => {
     if (step.key === 'welcome') return 'Commencer'
     if (step.key === 'done') return 'Ouvrir Flux'
@@ -409,13 +450,14 @@ export function Onboarding({ onTint, onDone }: { onTint(style: RankStyle): void;
   const canLater =
     (secret && !saved && !verified) ||
     (step.key === 'jira' && !jiraSaved && !verified) ||
+    (step.key === 'figma' && !figmaSaved && !verified) ||
     (step.key === 'notifications' && access === 'not-determined')
   const summary = settings
     ? [
         { label: 'GitHub', ok: github.state === 'done' && github.ok },
         ...trackers.map(name => ({
           label: trackerInfo(name).label,
-          ok: name === 'jira' ? jiraSaved : settings.hasLinearKey,
+          ok: name === 'jira' ? jiraSaved : name === 'figma' ? figmaSaved : settings.hasLinearKey,
         })),
         ...(calendar ? [{ label: calendarInfo(calendar).label, ok: settings.hasCalendarUrl }] : []),
         { label: 'Notifications', ok: allowed(access) },
@@ -445,7 +487,7 @@ export function Onboarding({ onTint, onDone }: { onTint(style: RankStyle): void;
 
         <div className="onboarding-step" key={step.key}>
           <span className="onboarding-icon">
-            {step.key === 'jira' || step.key === 'linear' ? (
+            {isTracker(step.key) ? (
               <TrackerBadge name={step.key} size={30} />
             ) : typeof Icon === 'string' ? (
               <BrandIcon brand={Icon} size={26} />
@@ -499,7 +541,7 @@ export function Onboarding({ onTint, onDone }: { onTint(style: RankStyle): void;
           )}
 
           {step.key === 'tools' && (
-            <div className="onboarding-tools" role="group" aria-label="Outils de gestion de projet">
+            <div className="onboarding-tools" role="group" aria-label="Outils">
               {TRACKERS.map(tracker => {
                 const on = trackers.includes(tracker.id)
                 return (
@@ -565,6 +607,41 @@ export function Onboarding({ onTint, onDone }: { onTint(style: RankStyle): void;
             </div>
           )}
 
+          {step.key === 'figma' && (
+            <div className="onboarding-field">
+              <input
+                ref={input}
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                aria-label="Équipes Figma"
+                placeholder="https://www.figma.com/files/team/…"
+                value={figma.teams}
+                onChange={event => {
+                  setFigma(current => ({ ...current, teams: event.target.value }))
+                  setStatus({ state: 'idle' })
+                }}
+              />
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                aria-label="Jeton Figma"
+                placeholder={
+                  settings?.hasFigmaToken
+                    ? 'Jeton déjà enregistré, colle-en un nouveau pour le remplacer'
+                    : 'Jeton d’accès personnel'
+                }
+                value={figma.token}
+                onChange={event => {
+                  setFigma(current => ({ ...current, token: event.target.value }))
+                  setStatus({ state: 'idle' })
+                }}
+              />
+              <small>{step.help}</small>
+            </div>
+          )}
+
           {step.key === 'calendar' && (
             <div className="onboarding-tools compact" role="group" aria-label="Agenda">
               {CALENDARS.map(entry => {
@@ -610,7 +687,7 @@ export function Onboarding({ onTint, onDone }: { onTint(style: RankStyle): void;
               {help && <small>{help}</small>}
             </label>
           )}
-          {(secret || step.key === 'jira') && <StatusLine status={status} />}
+          {(secret || step.key === 'jira' || step.key === 'figma') && <StatusLine status={status} />}
 
           {step.key === 'projects' && (
             <ProjectsPicker

@@ -16,11 +16,13 @@ const BADGE: Record<BadgeName, { background: string; color: string; initial: str
   outlook: { background: '#5b5fc7', color: '#ffffff', initial: 'T' },
   google: { background: '#1a73e8', color: '#ffffff', initial: 'G' },
   apple: { background: '#f4f5f7', color: '#0a0c12', initial: 'i' },
+  figma: { background: '#1e1e1e', color: '#ffffff', initial: 'F' },
 }
 
 export const TRACKER_HINT: Record<TrackerName, string> = {
   jira: 'Tickets assignés et tickets cités par tes sujets',
   linear: 'Tickets assignés, mentions et commentaires',
+  figma: 'Commentaires qui t’attendent, une tâche par fichier',
   trello: 'Cartes qui te sont assignées',
   notion: 'Tâches de tes bases Notion',
 }

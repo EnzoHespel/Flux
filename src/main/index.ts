@@ -24,11 +24,13 @@ import { Daily, localDate } from './llm/daily'
 import { createDailySkill, useDailyTemplate } from './llm/dailySkillBrief'
 import { Triage } from './llm/triage'
 import { notificationAccess, requestNotificationAccess } from './notificationAccess'
-import { checkCalendarUrl, checkGithub, checkJira, checkLinearKey, normalizeJiraSite } from './onboarding'
+import { checkCalendarUrl, checkFigma, checkGithub, checkJira, checkLinearKey, normalizeJiraSite } from './onboarding'
 import { ACTIVE_PROFILE, profiles, saveProfiles } from './profile'
-import { ARCHIVE_DIR, DAILY_DIR, THREADS_DIR, TOPICS_DIR } from './paths'
+import { ARCHIVE_DIR, DAILY_DIR, FIGMA_FILE, THREADS_DIR, TOPICS_DIR } from './paths'
 import { fetchCalendar } from './sources/calendar'
-import { GITHUB_HOST, listGithubAccounts, listRecentRepos } from './sources/github'
+import { fetchMyPulls, GITHUB_HOST, listGithubAccounts, listRecentRepos } from './sources/github'
+import { PullBoard } from './engine/pulls'
+import { FigmaScanner } from './sources/figma'
 import { fetchJira, listJiraProjects } from './sources/jira'
 import { fetchCompleted, fetchLinear, listLinearTeams } from './sources/linear'
 import { fetchStoreReviews } from './sources/stores'
@@ -398,6 +400,7 @@ function registerIpc(): void {
   ipcMain.handle('flux:check-jira', (_event, site: string, email: string, token: string) =>
     checkJira(site, email, token),
   )
+  ipcMain.handle('flux:check-figma', (_event, token: string, teams: string[]) => checkFigma(token, teams))
   ipcMain.handle('flux:list-projects', () => listProjects())
   ipcMain.handle('flux:check-calendar-url', (_event, url: string) => checkCalendarUrl(url))
   ipcMain.handle('flux:run-daily', () => daily.run(new Date(), flux.current()))
@@ -428,6 +431,7 @@ async function main(): Promise<void> {
   await app.whenReady()
   settings = new SettingsStore()
   const triage = new Triage()
+  const figma = new FigmaScanner(FIGMA_FILE)
   daily = new Daily(
     state => flux.setDaily(state),
     () => notifyDaily(),
@@ -459,6 +463,10 @@ async function main(): Promise<void> {
       return key ? fetchCompleted(key, since) : []
     },
     fetchReviews: async () => (CONFIG.daily.stores.apps.length > 0 ? fetchStoreReviews(CONFIG.daily.stores) : null),
+    fetchFigma: async followed => {
+      const access = settings.figma()
+      return access ? figma.step(access.token, access.teams, followed, new Date()) : null
+    },
     fetchJira: async (keys, projects) => {
       const token = settings.secret('jiraToken')
       const email = settings.values.jiraEmail

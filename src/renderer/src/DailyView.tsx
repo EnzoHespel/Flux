@@ -14,7 +14,7 @@ import type {
   StoreReview,
 } from '../../shared/types'
 import { BrandIcon, LinkIcon } from './Brand'
-import { clock, displayTitle } from './format'
+import { clock, displayTitle, refLabel } from './format'
 import { menuOfLine, showMenu } from './navigation'
 import { rankStyle } from './rankStyle'
 
@@ -85,11 +85,11 @@ function Pills({ refs }: { refs: RefPill[] }) {
             }}
           >
             <LinkIcon url={pill.url} size={11} />
-            {pill.ref}
+            {refLabel(pill.ref)}
           </button>
         ) : (
           <span key={pill.ref} className="ref-pill">
-            {pill.ref}
+            {refLabel(pill.ref)}
           </span>
         ),
       )}
