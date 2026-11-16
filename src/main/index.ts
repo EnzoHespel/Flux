@@ -40,6 +40,7 @@ import { closeThreads } from './threads/close'
 import { adoptThreads } from './threads/desktop'
 import { goToThread, launchThread } from './threads/launch'
 import { desktopOf } from './threads/sessions'
+import { noReviewRepos } from './workspaces'
 
 const THREAD_SETTLE_MS = 6_000
 
@@ -311,7 +312,10 @@ function setProfiles(patch: ProfilesPatch): void {
   app.quit()
 }
 
+const pulls = new PullBoard(fetchMyPulls, noReviewRepos)
+
 function registerIpc(): void {
+  ipcMain.handle('flux:my-pulls', (_event, force: boolean) => pulls.get(settings.values.githubAccount, force))
   ipcMain.handle('flux:get-state', () => flux.current())
   ipcMain.handle('flux:refresh', () => flux.refresh())
   ipcMain.handle('flux:refresh-all', () => flux.refreshAll())

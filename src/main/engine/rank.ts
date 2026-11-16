@@ -260,6 +260,20 @@ function theirSignals(pr: PullRequest, ref: string, ctx: RankContext): Signal[] 
   return []
 }
 
+// Where one of my PRs stands, in the words of the file; no rank while it waits on the reviewers
+export function pullStatus(pr: PullRequest, ctx: RankContext): { status: string; rank: Rank | null } {
+  const ref = prRef(pr.repo, pr.number)
+  if (BLOCKED_TITLE.test(pr.title)) return { status: 'Bloquée', rank: null }
+  // A draft says so on its own badge: its status is what comes next
+  const mine = pr.isDraft ? [] : mineSignals(pr, ref, ctx)
+  const lead = [pendingReviewSignal(pr, ref, ctx), ...mine].find(entry => entry !== null)
+  if (lead) return { status: lead.detail, rank: lead.rank }
+  if (pr.ci === 'PENDING' || pr.ci === 'EXPECTED') return { status: 'CI en cours', rank: null }
+  if (pr.isDraft) return { status: 'Pas encore en review', rank: null }
+  if (pr.reviewDecision === 'APPROVED') return { status: 'Approuvée', rank: null }
+  return { status: 'En attente de review', rank: null }
+}
+
 export function itemFromPullRequest(pr: PullRequest, ctx: RankContext): Item {
   const ref = prRef(pr.repo, pr.number)
   const refs = [ref, ...ticketKeys(`${pr.title} ${pr.headRefName}`)]

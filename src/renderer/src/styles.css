@@ -2869,6 +2869,60 @@ button.ref-pill:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* Journée : le daily et le wrap-up sous un même onglet */
+
+.day-tabs {
+  align-self: flex-start;
+  margin-bottom: -8px;
+}
+
+.day-tabs button {
+  height: 30px;
+  padding: 0 13px;
+  font-size: 13.5px;
+}
+
+/* Mes PR */
+
+.pull-row {
+  grid-template-columns: 16px 62px minmax(0, 1fr) auto;
+}
+
+.pull-state {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pull-state.draft {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-2);
+}
+
+.pull-ci {
+  color: var(--text-3);
+}
+
+.pull-ci.ok {
+  color: var(--ok);
+}
+
+.pull-ci.fail {
+  color: var(--danger);
+}
+
+.pull-status {
+  color: var(--text-2);
+}
+
 /* Réglages */
 
 .scrim {

@@ -542,17 +542,24 @@ export class Flux {
     const pullRequests =
       githubAccount === this.settings.values.githubAccount ? (github?.pullRequests ?? []) : []
     const me = github?.me
-    const noReview = new Set(
-      allWorkspaces().flatMap(workspace =>
-        (workspace.github.noReview ?? []).map(repo => (repo.split('/').at(-1) ?? repo).toLowerCase()),
-      ),
-    )
-    const context = { me: me ?? '', now, noReview }
+    const context = { me: me ?? '', now, noReview: noReviewRepos() }
     return [
       ...pullRequests.map(pr => itemFromPullRequest(pr, context)),
       ...this.tickets.map(ticket => itemFromTicket(ticket, context)),
       ...jira.map(ticket => itemFromTicket(ticket, context)),
+      ...this.figma.map(itemFromFigmaFile),
     ]
+  }
+
+  // Figma topics show in every workspace: all open ones count
+  private followedFigma(): string[] {
+    return this.topics
+      .filter(topic => topic.status !== 'done')
+      .flatMap(topic => topic.links)
+      .flatMap(link => {
+        const key = figmaKey(link)
+        return key ? [key] : []
+      })
   }
 
   private meetingStatus(now: Date): AppState['meeting'] {
