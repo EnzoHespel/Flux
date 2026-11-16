@@ -109,10 +109,13 @@ function ballOf(topic: Topic, items: Item[], signals: Signal[], threads: ThreadV
   return 'others'
 }
 
-// A conversation means I started, whoever holds the ball; without one, the signals say. A blocked
-// topic, a ticket to unblock or with another reviewer, waits; everything else is still to start
-function stageOf(topic: Topic, signals: Signal[], threads: ThreadView[]): Stage {
-  if (threads.some(thread => thread.status !== 'pending')) return 'started'
+// One place per topic, En cours and Attente never both. Waiting on others wins, a conversation
+// included: blocked, a review or an answer to come, nothing for a month. Claude at work, or a
+// conversation while the ball is mine, means I started; without one, the signals say: a ticket to
+// unblock or with another reviewer waits too, and everything else is still to start
+function stageOf(topic: Topic, ball: Ball, signals: Signal[], threads: ThreadView[]): Stage {
+  if (ball === 'others' || ball === 'dormant') return 'held'
+  if (ball === 'agent' || threads.some(thread => thread.status !== 'pending')) return 'started'
   if (topic.blocked) return 'held'
   if (signals.some(entry => entry.stage === 'started')) return 'started'
   if (signals.some(entry => entry.stage === 'held')) return 'held'
@@ -148,7 +151,7 @@ function viewOf(
     threads,
     rank,
     ball,
-    stage: stageOf(topic, signals, threads),
+    stage: stageOf(topic, ball, signals, threads),
     mine: items.length === 0 || items.some(item => item.mine),
     // Waiting on an answer to my comment counts from the comment
     since: lead ? lead.since : oldestAsked(items),
@@ -261,8 +264,8 @@ export function compareViews(a: TopicView, b: TopicView): number {
   return compareSignals(left, right)
 }
 
-// En cours: every topic I started, until it closes: one with a conversation whoever holds the ball,
-// my open PR, a ticket under way, a review I am writing. Working first, then waiting on you, then
+// En cours: every topic I started and that waits on no one else, until it closes: Claude at work, a
+// conversation, my open PR, a ticket under way, a review I am writing. Working first, then waiting on you, then
 // paused, then the rest; the latest turn first within each, and the file's order without a conversation
 const THREAD_ORDER: Record<ThreadView['status'], number> = {
   busy: 0,

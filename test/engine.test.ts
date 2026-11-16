@@ -683,10 +683,31 @@ describe('où en est ma part', () => {
     expect(reconcile([topic({ links: ['APP-1'], blocked: 'Décision produit' })], [ticketItem()], [], NOW).views[0].stage).toBe(
       'held',
     )
-    // A conversation keeps it under way, even blocked
+    // Blocked, it waits even with a conversation; only Claude at work on it keeps it under way
     const thread = { session: 's1', name: 'x', cwd: '/', startedAt: '2026-11-06T10:00:00Z' }
-    const talked = topic({ links: ['APP-1'], blocked: 'Décision produit', threads: [thread] })
-    expect(reconcile([talked], [ticketItem()], [{ session: 's1', status: 'idle' }], NOW).views[0].stage).toBe('started')
+    const talked = topic({ links: ['APP-1'], blocked: 'Nico explore une autre piste', threads: [thread] })
+    expect(reconcile([talked], [ticketItem()], [{ session: 's1', status: 'idle' }], NOW).views[0].stage).toBe('held')
+    expect(reconcile([talked], [ticketItem()], [{ session: 's1', status: 'busy' }], NOW).views[0].stage).toBe('started')
+  })
+
+  it('ne met jamais un sujet à la fois En cours et en Attente', () => {
+    const thread = (session: string) => ({ session, name: 'x', cwd: '/', startedAt: '2026-11-06T10:00:00Z' })
+    const waiting = itemFromPullRequest(pr({ number: 5, headRefName: 'feature/app-5', title: '[APP-5] feat' }), context)
+    const review = itemFromTicket(ticket({ key: 'APP-5', stateName: 'In Review', stateType: 'started' }), context)
+    const views = reconcile(
+      [
+        topic({ id: 'blocked', links: ['APP-1'], blocked: 'Nico explore une autre piste', threads: [thread('s1')] }),
+        topic({ id: 'in-review', links: ['mobile#5', 'APP-5'], threads: [thread('s2')] }),
+        topic({ id: 'talk', threads: [thread('s3')] }),
+      ],
+      [ticketItem(), waiting, review],
+      [{ session: 's3', status: 'idle' }],
+      NOW,
+    ).views
+    const active = activeViews(views).map(view => view.topic.id)
+    const held = views.filter(view => view.ball === 'others' || view.ball === 'dormant').map(view => view.topic.id)
+    expect(active).toEqual(['talk'])
+    expect(held.sort()).toEqual(['blocked', 'in-review'])
   })
 
   it('met dans En cours tout ce qui est entamé, les conversations d’abord puis dans l’ordre de la file', () => {

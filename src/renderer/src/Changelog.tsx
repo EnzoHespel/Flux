@@ -17,7 +17,7 @@ const ENTRIES: Entry[] = [
     id: '2026-11-16-decoupage',
     date: '16 nov.',
     name: 'Nouveau découpage',
-    text: 'Chaque sujet de la file a sa place : À démarrer tant que tu n’y as pas touché, En cours dès que tu l’entames, conversation ou pas, et Attente s’il est bloqué ou chez un autre relecteur.',
+    text: 'Chaque sujet a une seule place : À démarrer tant que tu n’y as pas touché, En cours dès que tu l’entames, conversation ou pas, et Attente s’il est bloqué ou attend quelqu’un d’autre, même avec une conversation.',
     scene: 'split',
   },
   {
