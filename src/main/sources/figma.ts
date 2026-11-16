@@ -16,8 +16,9 @@ const MAX_RECENT_FILES = 40
 const PENDING_DAYS = 30
 const FOLDERS_EVERY_MS = 6 * 3_600_000
 const LISTING_EVERY_MS = 3_600_000
-// A file you have a topic or a pending comment on is read again after this, ahead of the others
-const PRIORITY_EVERY_MS = 5 * 60_000
+// A file's comments are read again after this, no sooner: nothing here needs the minute. A file you
+// have a topic or a pending comment on goes first
+const COMMENTS_EVERY_MS = 5 * 60_000
 // Requests per tick of a minute. Comments, folders and file listings allow 5 a minute
 // to a View or Collab seat, 25 and more to a Full or Dev seat
 const BUDGET = { low: 3, high: 12 } as const
@@ -306,7 +307,7 @@ export class FigmaScanner {
     }
     const readAt = (key: string) => state.files[key]?.readAt ?? ''
     const due = keys
-      .filter(key => !priority.has(key) || !state.files[key] || at - Date.parse(readAt(key)) >= PRIORITY_EVERY_MS)
+      .filter(key => !state.files[key] || at - Date.parse(readAt(key)) >= COMMENTS_EVERY_MS)
       .sort((a, b) => Number(priority.has(b)) - Number(priority.has(a)) || readAt(a).localeCompare(readAt(b)))
 
     let read = 0

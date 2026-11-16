@@ -168,6 +168,18 @@ describe('lecture progressive de Figma', () => {
     expect(files.map(file => [file.key, file.name, file.pending.length])).toEqual([['A', 'app_aidant', 1]])
   })
 
+  it('ne relit les commentaires d’un fichier qu’au bout de cinq minutes', async () => {
+    const { calls, http } = figma(routes)
+    const scanner = new FigmaScanner(null, http)
+    const at = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000)
+    await scanner.step('token', ['T'], [], NOW)
+    await scanner.step('token', ['T'], [], at(1))
+    for (const minutes of [2, 3, 4, 5]) await scanner.step('token', ['T'], [], at(minutes))
+    expect(calls.slice(3)).toEqual(['/v1/files/A/comments'])
+    await scanner.step('token', ['T'], [], at(6))
+    expect(calls.slice(3)).toEqual(['/v1/files/A/comments', '/v1/files/A/comments'])
+  })
+
   it('lit d’abord un fichier suivi par un sujet, même ancien, et se tait après un 429', async () => {
     const limited = {
       ...routes,
