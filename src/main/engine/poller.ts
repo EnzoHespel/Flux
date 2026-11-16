@@ -211,7 +211,7 @@ export class Flux {
   view(id: string): TopicView | undefined {
     const state = this.state
     if (!state) return undefined
-    const views = [...state.queue, ...state.active, ...state.waiting, ...state.dormant, ...state.notes]
+    const views = [...state.queue, ...state.active, ...state.waiting, ...state.dormant]
     return views.find(view => view.topic.id === id)
   }
 
@@ -642,7 +642,6 @@ export class Flux {
       active,
       waiting: pick('others'),
       dormant: pick('dormant'),
-      notes: views.filter(view => view.topic.status === 'inbox' && view.ball !== 'agent'),
       loose: result.loose.filter(item => item.ball === 'others'),
       sources: this.visibleHealth(),
       meeting,
@@ -719,7 +718,6 @@ export class Flux {
         })),
       ],
       dormant: state.dormant.map(summarize),
-      notes: state.notes.map(summarize),
       mergedSincePreviousWorkday: merged,
       upcomingMeetings: this.meetings.filter(meeting => meeting.end > state.generatedAt).slice(0, 10),
     }

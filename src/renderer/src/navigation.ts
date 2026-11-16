@@ -2,37 +2,46 @@ import { fluxLink, type FluxRoute, type LinkMenu } from '../../shared/links'
 import type { AppState, Item, Rank, RefPill, TopicView } from '../../shared/types'
 import { displayTitle } from './format'
 
-export type ListTab = 'queue' | 'active' | 'waiting' | 'notes'
-export type SheetTab = 'wrapup' | 'daily'
+export type ListTab = 'queue' | 'unstarted' | 'active' | 'waiting'
+export type SheetTab = 'pulls' | 'wrapup' | 'daily'
 export type Tab = ListTab | SheetTab
 
 export const TAB_LABEL: Record<Tab, string> = {
   queue: 'File',
+  unstarted: 'À démarrer',
   active: 'En cours',
   waiting: 'Attente',
-  notes: 'Notes',
+  pulls: 'Mes PR',
   wrapup: 'Wrap-up',
   daily: 'Daily',
 }
 
-const LIST_TABS: ListTab[] = ['queue', 'active', 'waiting', 'notes']
+// The order a topic's home tab is looked for: À démarrer only lists part of the file
+const LIST_TABS: ListTab[] = ['queue', 'active', 'waiting', 'unstarted']
+const SEARCH_TABS: ListTab[] = ['queue', 'active', 'waiting']
 
 export const looseId = (item: Item) => `loose:${item.ref}`
 
 export function allViews(state: AppState): TopicView[] {
-  return [...state.queue, ...state.active, ...state.waiting, ...state.notes, ...state.dormant]
+  return [...state.queue, ...state.active, ...state.waiting, ...state.dormant]
 }
 
-// Waiting puts my own work before the work of others; dormant topics close each half
+// À démarrer is the file without what I already took up: started, it is En cours; blocked or with a
+// reviewer, it waits. Waiting puts my own work before the work of others; dormant topics close each half
 export function listOf(state: AppState, tab: ListTab): TopicView[] {
+  if (tab === 'unstarted') return state.queue.filter(view => view.stage === 'untouched')
   if (tab !== 'waiting') return state[tab]
-  const views = [...state.waiting, ...state.dormant]
+  const views = [...state.queue.filter(view => view.stage === 'held'), ...state.waiting, ...state.dormant]
   return [...views.filter(view => view.mine), ...views.filter(view => !view.mine)]
 }
 
-export function tabFor(state: AppState, id: string): ListTab | null {
+// A topic sits in several lists, En cours above all: the tab you are on keeps it when it lists it
+export function tabFor(state: AppState, id: string, current?: Tab): ListTab | null {
   if (state.loose.some(item => looseId(item) === id)) return 'waiting'
-  return LIST_TABS.find(tab => listOf(state, tab).some(view => view.topic.id === id)) ?? null
+  const holds = (tab: ListTab) => listOf(state, tab).some(view => view.topic.id === id)
+  const here = LIST_TABS.find(tab => tab === current)
+  if (here && holds(here)) return here
+  return LIST_TABS.find(holds) ?? null
 }
 
 const sameRef = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
@@ -126,8 +135,12 @@ interface Candidate {
 
 function candidates(state: AppState): Candidate[] {
   const list: Candidate[] = []
-  for (const tab of LIST_TABS) {
+  // A topic in progress is also in the file or in waiting: it shows once, under its first tab
+  const seen = new Set<string>()
+  for (const tab of SEARCH_TABS) {
     for (const view of listOf(state, tab)) {
+      if (seen.has(view.topic.id)) continue
+      seen.add(view.topic.id)
       const lead = view.signals[0]?.detail ?? view.topic.blocked ?? view.items.find(item => item.asked)?.asked?.excerpt
       list.push({
         result: {

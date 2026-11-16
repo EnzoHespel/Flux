@@ -145,19 +145,26 @@ function signal(
   return { id: `${ref}:${suffix}`, rank, weight, detail, action, since, stamp }
 }
 
+// I have put my hands on it: a review being written, my own PR, a ticket under way
+function begun(entry: Signal): Signal {
+  return { ...entry, stage: 'started' }
+}
+
 function pendingReviewSignal(pr: PullRequest, ref: string, { now }: RankContext): Signal | null {
   const pending = pr.pendingReview
   if (!pending) return null
   const quietMinutes = (now.getTime() - new Date(pending.updatedAt).getTime()) / 60_000
   if (quietMinutes < PENDING_QUIET_MINUTES) return null
-  return signal(
-    ref,
-    'pending-review',
-    0,
-    `${plural(pending.comments, 'commentaire')} non soumis`,
-    'submit-review',
-    pending.createdAt,
-    pending.updatedAt,
+  return begun(
+    signal(
+      ref,
+      'pending-review',
+      0,
+      `${plural(pending.comments, 'commentaire')} non soumis`,
+      'submit-review',
+      pending.createdAt,
+      pending.updatedAt,
+    ),
   )
 }
 
@@ -295,22 +302,29 @@ export function itemFromPullRequest(pr: PullRequest, ctx: RankContext): Item {
   const blocked = BLOCKED_TITLE.test(pr.title)
   const stale = ageDays(pr.updatedAt, ctx.now) > DORMANT_DAYS
   if (!blocked) {
-    if (base.mine && !stale) signals.push(...mineSignals(pr, ref, ctx))
-    if (!base.mine) signals.push(...theirSignals(pr, ref, ctx))
+    // My open PR is work under way, whatever it waits on; a review asked of me is, once I write it
+    if (base.mine && !stale) signals.push(...mineSignals(pr, ref, ctx).map(begun))
+    if (!base.mine) signals.push(...theirSignals(pr, ref, ctx).map(entry => (pr.pendingReview ? begun(entry) : entry)))
   }
   // My PR with no ticket behind it, end-to-end tests for instance: no ticket state keeps it among my
   // topics, so the PR itself does until it lands
   if (base.mine && !blocked && !stale && refs.length === 1 && signals.length === 0) {
-    signals.push(signal(ref, 'open', 6, 'PR ouverte', 'fix-pr', pr.updatedAt))
+    signals.push(begun(signal(ref, 'open', 6, 'PR ouverte', 'fix-pr', pr.updatedAt)))
   }
 
   const ball = signals.length > 0 ? 'me' : blocked || stale ? 'dormant' : 'others'
-  return { ...base, terminal: false, ball, signals }
+  // A review still being written is not done, even after an earlier one
+  const reviewed = !base.mine && pr.reviewedAt !== null && pr.pendingReview === null && signals.length === 0
+  return { ...base, terminal: false, ball, signals, ...(reviewed ? { reviewed } : {}) }
 }
 
 export const CLOSED_STATE_TYPES = new Set(['completed', 'canceled', 'duplicate'])
 const QUESTION_STATES = new Set(['To unblock', 'To frame', 'Technical review'])
+// Blocked, or with another reviewer: still asking something of me, but nothing to start
+const HELD_STATES = new Set(['To unblock', 'Technical review'])
 const OWN_STATES = new Set(['Todo Today', 'In Progress', 'Personal Review'])
+// Planned for today, not started yet
+const PLANNED_STATE = 'Todo Today'
 const BUG_LABELS = /sentry|bug/i
 
 export function itemFromTicket(ticket: Ticket, ctx: RankContext): Item {
@@ -340,12 +354,14 @@ export function itemFromTicket(ticket: Ticket, ctx: RankContext): Item {
   if (ticket.assignedToMe && !ticket.hasSubIssues) {
     if (QUESTION_STATES.has(ticket.stateName)) {
       const action = ticket.stateName === 'To frame' ? 'cadrage' : 'question'
-      signals.push(signal(ref, 'state-question', 3, ticket.stateName, action, ticket.updatedAt))
+      const question = signal(ref, 'state-question', 3, ticket.stateName, action, ticket.updatedAt)
+      signals.push(HELD_STATES.has(ticket.stateName) ? { ...question, stage: 'held' } : question)
     } else if (/^ready to (deploy|mep)$/i.test(ticket.stateName)) {
-      signals.push(signal(ref, 'state-ready', 4, 'Prêt à déployer', 'ship', ticket.updatedAt))
+      signals.push(begun(signal(ref, 'state-ready', 4, 'Prêt à déployer', 'ship', ticket.updatedAt)))
     } else if (OWN_STATES.has(ticket.stateName) || ticket.inProgress) {
       const action = ticket.labels.some(label => BUG_LABELS.test(label)) ? 'diagnostic' : 'ticket'
-      signals.push(signal(ref, 'state-own', 6, ticket.stateName, action, ticket.updatedAt))
+      const own = signal(ref, 'state-own', 6, ticket.stateName, action, ticket.updatedAt)
+      signals.push(ticket.stateName === PLANNED_STATE ? own : begun(own))
     } else if (ticket.stateType === 'unstarted') {
       // Assigned and not started yet: still mine, after what is already under way
       const action = ticket.labels.some(label => BUG_LABELS.test(label)) ? 'diagnostic' : 'ticket'

@@ -1,5 +1,5 @@
 import { GripVertical, PenLine, Plus, RefreshCw, X } from 'lucide-react'
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { countLabel, stars, STORE_LABEL, YESTERDAY_LABEL } from '../../shared/dailyLabels'
 import { DAILY_TEMPLATE } from '../../shared/dailyTemplate'
 import { RANKS } from '../../shared/ranks'
@@ -531,11 +531,17 @@ function subtitle(sheet: DailySheet): string {
   return [date.charAt(0).toUpperCase() + date.slice(1), stamp].filter(Boolean).join(' · ')
 }
 
-export function DailyView({ daily, onOpen, onNote }: { daily: DailySheet } & LineActions) {
+export function DailyView({
+  daily,
+  onOpen,
+  onNote,
+  nav,
+}: { daily: DailySheet; nav?: ReactNode } & LineActions) {
   const actions = { onOpen, onNote }
   return (
     <main className="page">
       <div className="page-column daily">
+        {nav}
         <header className="daily-head">
           <div>
             <h1>Daily</h1>

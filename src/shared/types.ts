@@ -153,6 +153,7 @@ export interface TopicView {
   threads: ThreadView[]
   rank: Rank | null
   ball: Ball
+  stage: Stage
   // My own work: one of its items is mine, or a note with nothing linked
   mine: boolean
   since: string | null
@@ -370,7 +371,6 @@ export interface AppState {
   active: TopicView[]
   waiting: TopicView[]
   dormant: TopicView[]
-  notes: TopicView[]
   loose: Item[]
   // Only the sources in use: a tool you did not choose never asks to be connected
   sources: Partial<Record<SourceName, SourceHealth>>

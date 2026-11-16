@@ -1,18 +1,20 @@
 import {
   CalendarClock,
   CloudOff,
+  KeyRound,
   Layers,
   Plug,
   Plus,
   RefreshCw,
   Search as SearchIcon,
   Settings,
+  TriangleAlert,
   Waves,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { parseFluxLink } from '../../shared/links'
 import type { Profiles } from '../../shared/profiles'
-import type { AppState, Settings as FluxSettings, SourceName } from '../../shared/types'
+import type { AppState, MyPulls, Settings as FluxSettings, SourceName } from '../../shared/types'
 import { Boot, type BootProgress } from './Boot'
 import { Changelog } from './Changelog'
 import { DailyView } from './DailyView'
@@ -32,6 +34,7 @@ import {
   type Tab,
 } from './navigation'
 import { ProfileSwitch } from './Profiles'
+import { PullsView } from './PullsView'
 import { ownerGroups, Rail } from './Rail'
 import { rankStyle, type RankStyle } from './rankStyle'
 import { Search } from './Search'
@@ -52,16 +55,52 @@ const SOURCE_LABEL: Record<SourceName, string> = {
   github: 'GitHub',
   linear: 'Linear',
   jira: 'Jira',
+  figma: 'Figma',
   agents: 'Agents',
   calendar: 'Agenda',
 }
 
 function isSheet(tab: Tab): tab is SheetTab {
-  return tab === 'wrapup' || tab === 'daily'
+  return tab === 'pulls' || tab === 'wrapup' || tab === 'daily'
+}
+
+type DayTab = 'daily' | 'wrapup'
+const isDay = (tab: Tab): tab is DayTab => tab === 'daily' || tab === 'wrapup'
+
+// Daily and wrap-up share one tab of the bar, each a page of its own
+function DayTabs({
+  tab,
+  unread,
+  onPick,
+}: {
+  tab: DayTab
+  unread: Record<DayTab, boolean>
+  onPick(tab: DayTab): void
+}) {
+  const entries: Array<{ key: DayTab; label: string; hint: string }> = [
+    { key: 'daily', label: 'Daily', hint: 'Nouveau daily' },
+    { key: 'wrapup', label: 'Wrap-up', hint: 'Wrap-up à faire' },
+  ]
+  return (
+    <nav className="tabs glass day-tabs" aria-label="Journée">
+      {entries.map(entry => (
+        <button
+          type="button"
+          key={entry.key}
+          aria-current={tab === entry.key ? 'page' : undefined}
+          onClick={() => onPick(entry.key)}
+        >
+          {entry.label}
+          {unread[entry.key] && <span className="unread" aria-label={entry.hint} />}
+        </button>
+      ))}
+    </nav>
+  )
 }
 
 function emptyTitle(tab: ListTab, looseCount: number): string {
   if (tab === 'queue') return "Rien ne t'attend."
+  if (tab === 'unstarted') return 'Rien à démarrer : le reste est en cours ou en attente.'
   if (tab === 'waiting' && looseCount > 0) return 'Ces sujets attendent les autres.'
   return 'Rien ici pour le moment.'
 }
@@ -105,11 +144,26 @@ export function App() {
   // A flux:// link waits for the first state before it can land
   const [link, setLink] = useState<string | null>(null)
   const bootStart = useRef(performance.now())
+  // The day tab reopens on the page you left it on
+  const [day, setDay] = useState<DayTab>('daily')
+  const [pulls, setPulls] = useState<MyPulls | null>(null)
+  const [pullsLoading, setPullsLoading] = useState(false)
+
+  // GitHub answers from a cache of a couple of minutes unless forced
+  const loadPulls = (force: boolean) => {
+    setPullsLoading(true)
+    window.flux
+      .myPulls(force)
+      .then(setPulls)
+      .catch(error => setPulls(current => ({ at: current?.at ?? null, pulls: current?.pulls ?? [], error: (error as Error).message })))
+      .finally(() => setPullsLoading(false))
+  }
 
   // Refetches every source, calendar included; the button and ⌘R share it
   const refreshAll = () => {
     if (refreshing) return
     setRefreshing(true)
+    loadPulls(true)
     window.flux
       .refreshAll()
       .catch(error => showToast(`Actualisation impossible : ${(error as Error).message}`, 'error'))
@@ -228,9 +282,18 @@ export function App() {
 
   useEffect(() => {
     if (!state || !selected) return
-    const owner = tabFor(state, selected)
+    const owner = tabFor(state, selected, tab)
     if (owner && owner !== tab) setTab(owner)
   }, [selected, state === null])
+
+  // Each sync asks again, so the count in the bar stays current
+  useEffect(() => {
+    if (state) loadPulls(false)
+  }, [state?.generatedAt])
+
+  useEffect(() => {
+    if (isDay(tab)) setDay(tab)
+  }, [tab])
 
   useEffect(() => {
     if (tab === 'daily' && state?.daily.status === 'ready') {
@@ -328,18 +391,23 @@ export function App() {
     {
       key: 'waiting',
       label: 'Attente',
-      count: state.waiting.length + state.dormant.length + state.loose.length,
+      count: listOf(state, 'waiting').length + state.loose.length,
     },
-    { key: 'notes', label: 'Notes', count: state.notes.length },
-    { key: 'wrapup', label: 'Wrap-up', count: 0 },
-    { key: 'daily', label: 'Daily', count: 0 },
+    { key: 'unstarted', label: 'À démarrer', count: listOf(state, 'unstarted').length },
+    { key: 'pulls', label: 'Mes PR', count: pulls?.pulls.length ?? 0 },
+    // Daily and wrap-up, under one tab
+    { key: 'daily', label: 'Journée', count: 0 },
   ]
   const failing = (Object.keys(state.sources) as SourceName[]).filter(
     name => !state.sources[name]?.ok,
   )
   // Before its first answer a source is just loading: only an unconfigured one asks to connect
   const toConnect = failing.filter(name => state.sources[name]?.missing)
-  const offline = failing.filter(name => state.sources[name]?.error && !state.sources[name]?.missing)
+  const broken = failing.filter(name => state.sources[name]?.error && !state.sources[name]?.missing)
+  // Offline only when the network is: a refused token or a missing right is fixed in the settings
+  const offline = broken.filter(name => state.sources[name]?.failure === 'network')
+  const toReconnect = broken.filter(name => state.sources[name]?.failure === 'access')
+  const erring = broken.filter(name => !offline.includes(name) && !toReconnect.includes(name))
   // The title gives way to the time when the bar runs short
   const meeting = state.meeting.current
     ? { title: state.meeting.current.title, when: 'en cours' }
@@ -347,11 +415,16 @@ export function App() {
       ? { title: state.meeting.next.title, when: until(state.meeting.next.start) }
       : null
   const offlineLabel = offline.map(name => SOURCE_LABEL[name]).join(', ')
+  const failures = (names: SourceName[]) =>
+    names.map(name => `${SOURCE_LABEL[name]} : ${state.sources[name]?.error ?? ''}`).join('\n')
   const connectLabel = toConnect.map(name => SOURCE_LABEL[name]).join(', ')
   const unreadDaily = state.daily.status === 'ready' && readDate !== state.daily.date
   const unreadWrapup = wrapupMark !== null && readSlot !== wrapupMark
+  const dayTabs = isDay(tab) ? (
+    <DayTabs tab={tab} unread={{ daily: unreadDaily, wrapup: unreadWrapup }} onPick={setTab} />
+  ) : null
   const index = list.findIndex(view => view.topic.id === currentId)
-  const position = tab === 'queue' && index >= 0 ? `${index + 1} sur ${list.length}` : null
+  const position = (tab === 'queue' || tab === 'unstarted') && index >= 0 ? `${index + 1} sur ${list.length}` : null
   const openTopic = (id: string) => {
     setSelected(id)
     setTab(tabFor(state, id) ?? 'queue')
@@ -420,20 +493,19 @@ export function App() {
               <button
                 type="button"
                 key={entry.key}
-                aria-current={tab === entry.key ? 'page' : undefined}
+                aria-current={
+                  tab === entry.key || (entry.key === 'daily' && isDay(tab)) ? 'page' : undefined
+                }
                 onClick={() => {
-                  setTab(entry.key)
+                  setTab(entry.key === 'daily' ? day : entry.key)
                   setSelected(null)
                   setSettingsOpen(false)
                 }}
               >
                 {entry.label}
                 {entry.count > 0 && <span className="count">{entry.count}</span>}
-                {entry.key === 'daily' && unreadDaily && (
-                  <span className="unread" aria-label="Nouveau daily" />
-                )}
-                {entry.key === 'wrapup' && unreadWrapup && (
-                  <span className="unread" aria-label="Wrap-up à faire" />
+                {entry.key === 'daily' && (unreadDaily || unreadWrapup) && (
+                  <span className="unread" aria-label={unreadDaily ? 'Nouveau daily' : 'Wrap-up à faire'} />
                 )}
               </button>
             ))}
@@ -451,6 +523,28 @@ export function App() {
               <span className="chip glass warn compact" title={`Hors ligne : ${offlineLabel}`}>
                 <CloudOff size={14} aria-hidden="true" />
                 <span className="chip-text">Hors ligne</span>
+              </span>
+            )}
+            {toReconnect.length > 0 && (
+              <button
+                type="button"
+                className="chip glass warn compact"
+                title={`${failures(toReconnect)}\nOuvrir les réglages`}
+                onClick={() => {
+                  setSettingsView('main')
+                  setSettingsOpen(true)
+                }}
+              >
+                <KeyRound size={14} aria-hidden="true" />
+                <span className="chip-text">
+                  {toReconnect.length === 1 ? `${SOURCE_LABEL[toReconnect[0]]} à reconnecter` : 'À reconnecter'}
+                </span>
+              </button>
+            )}
+            {erring.length > 0 && (
+              <span className="chip glass warn compact" title={failures(erring)}>
+                <TriangleAlert size={14} aria-hidden="true" />
+                <span className="chip-text">En erreur</span>
               </span>
             )}
             {toConnect.length > 0 && (
@@ -512,9 +606,11 @@ export function App() {
         </header>
 
         {tab === 'daily' ? (
-          <DailyView daily={state.daily} onOpen={openTopic} onNote={addNote} />
+          <DailyView daily={state.daily} onOpen={openTopic} onNote={addNote} nav={dayTabs} />
         ) : tab === 'wrapup' ? (
-          <WrapupView wrapup={state.wrapup} onOpen={openTopic} />
+          <WrapupView wrapup={state.wrapup} onOpen={openTopic} nav={dayTabs} />
+        ) : tab === 'pulls' ? (
+          <PullsView board={pulls} loading={pullsLoading} onRefresh={() => loadPulls(true)} />
         ) : (
           <>
             <main className="focus">
@@ -528,7 +624,7 @@ export function App() {
               ) : (
                 <section className="hero">
                   <h1 className="hero-empty">{emptyTitle(listTab, state.loose.length)}</h1>
-                  {(listTab === 'queue' || listTab === 'notes') && (
+                  {listTab === 'queue' && (
                     <div className="hero-actions">
                       <button type="button" className="pill solid" onClick={() => void window.flux.openCapture()}>
                         Écrire une note
@@ -542,7 +638,7 @@ export function App() {
             <Rail
               views={list}
               loose={tab === 'waiting' ? state.loose : undefined}
-              grouping={tab === 'queue' ? 'rank' : tab === 'waiting' ? 'owner' : 'none'}
+              grouping={tab === 'queue' || tab === 'unstarted' ? 'rank' : tab === 'waiting' ? 'owner' : 'none'}
               selected={currentId}
               isFresh={isFresh}
               onSelect={setSelected}

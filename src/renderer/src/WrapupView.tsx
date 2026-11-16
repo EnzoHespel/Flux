@@ -66,7 +66,15 @@ function subtitle(wrapup: Wrapup): string {
   return [done, when].filter(Boolean).join(' · ')
 }
 
-export function WrapupView({ wrapup, onOpen }: { wrapup: Wrapup; onOpen(topicId: string): void }) {
+export function WrapupView({
+  wrapup,
+  onOpen,
+  nav,
+}: {
+  wrapup: Wrapup
+  onOpen(topicId: string): void
+  nav?: ReactNode
+}) {
   // The box answers at once; the state pushed back by the main process takes over
   const [pending, setPending] = useState<Record<string, boolean>>({})
   useEffect(() => setPending({}), [wrapup])
@@ -83,6 +91,7 @@ export function WrapupView({ wrapup, onOpen }: { wrapup: Wrapup; onOpen(topicId:
   return (
     <main className="page">
       <div className="page-column wrapup">
+        {nav}
         <header className="wrapup-head">
           <h1>{wrapup.slot ? `Wrap-up de ${wrapup.slot}` : 'Wrap-up'}</h1>
           <p>{subtitle(wrapup)}</p>

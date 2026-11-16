@@ -52,6 +52,7 @@ const view: TopicView = {
   threads: [],
   rank: 1,
   ball: 'me',
+  stage: 'untouched',
   mine: true,
   since: '2026-11-04T10:00:00Z',
   actions: [],

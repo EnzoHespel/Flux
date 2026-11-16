@@ -3,6 +3,7 @@ import type {
   Item,
   Rank,
   Signal,
+  Stage,
   ThreadView,
   Topic,
   TopicView,
@@ -95,6 +96,7 @@ function threadSignal(thread: ThreadView): Signal {
     since: thread.startedAt,
     stamp: thread.startedAt,
     action: 'resume',
+    stage: 'started',
   }
 }
 
@@ -105,6 +107,16 @@ function ballOf(topic: Topic, items: Item[], signals: Signal[], threads: ThreadV
   if (items.length > 0 && items.every(item => item.ball === 'parked')) return 'parked'
   if (items.length > 0 && items.every(item => item.ball === 'dormant' || item.ball === 'parked')) return 'dormant'
   return 'others'
+}
+
+// A conversation means I started, whoever holds the ball; without one, the signals say. A blocked
+// topic, a ticket to unblock or with another reviewer, waits; everything else is still to start
+function stageOf(topic: Topic, signals: Signal[], threads: ThreadView[]): Stage {
+  if (threads.some(thread => thread.status !== 'pending')) return 'started'
+  if (topic.blocked) return 'held'
+  if (signals.some(entry => entry.stage === 'started')) return 'started'
+  if (signals.some(entry => entry.stage === 'held')) return 'held'
+  return 'untouched'
 }
 
 function oldestAsked(items: Item[]): string | null {
@@ -136,11 +148,23 @@ function viewOf(
     threads,
     rank,
     ball,
+    stage: stageOf(topic, signals, threads),
     mine: items.length === 0 || items.some(item => item.mine),
     // Waiting on an answer to my comment counts from the comment
     since: lead ? lead.since : oldestAsked(items),
     actions: proposedActions(topic, items, signals),
   }
+}
+
+// Someone else's PR I reviewed, with nothing else in the topic for me: the topic closes, its idle
+// review thread with it, and the next request, a push or a reply reopens it
+function reviewDone(view: TopicView): boolean {
+  return (
+    view.items.some(item => item.reviewed) &&
+    view.items.every(item => !item.mine && item.signals.length === 0) &&
+    !view.topic.blocked &&
+    !view.threads.some(thread => thread.status === 'busy' || thread.status === 'pending')
+  )
 }
 
 export function reconcile(
@@ -206,7 +230,12 @@ export function reconcile(
       closed.push(topic.id)
       continue
     }
-    views.push(viewOf(topic, attached.filter(item => !item.terminal), sessions, desktop))
+    const view = viewOf(topic, attached.filter(item => !item.terminal), sessions, desktop)
+    if (reviewDone(view)) {
+      closed.push(topic.id)
+      continue
+    }
+    views.push(view)
   }
 
   const attachedRefs = new Set(pool.flatMap(topic => topic.links))
@@ -232,8 +261,9 @@ export function compareViews(a: TopicView, b: TopicView): number {
   return compareSignals(left, right)
 }
 
-// En cours: every topic that has a conversation, whoever holds the ball, until the topic closes.
-// Working first, then waiting on you, then paused, then the rest; the latest turn first within each
+// En cours: every topic I started, until it closes: one with a conversation whoever holds the ball,
+// my open PR, a ticket under way, a review I am writing. Working first, then waiting on you, then
+// paused, then the rest; the latest turn first within each, and the file's order without a conversation
 const THREAD_ORDER: Record<ThreadView['status'], number> = {
   busy: 0,
   idle: 1,
@@ -242,9 +272,11 @@ const THREAD_ORDER: Record<ThreadView['status'], number> = {
   closed: 3,
   pending: 4,
 }
+const WITHOUT_THREAD = 5
 
 function activity(view: TopicView): { order: number; at: string } {
   const started = view.threads.filter(thread => thread.status !== 'pending')
+  if (started.length === 0) return { order: WITHOUT_THREAD, at: '' }
   const order = Math.min(...started.map(thread => THREAD_ORDER[thread.status]))
   const at = started.map(thread => thread.activeAt).sort().at(-1) ?? ''
   return { order, at }
@@ -252,8 +284,8 @@ function activity(view: TopicView): { order: number; at: string } {
 
 export function activeViews(views: TopicView[]): TopicView[] {
   return views
-    .filter(view => view.topic.status !== 'done' && view.threads.some(thread => thread.status !== 'pending'))
+    .filter(view => view.topic.status !== 'done' && view.stage === 'started')
     .map(view => ({ view, ...activity(view) }))
-    .sort((a, b) => a.order - b.order || b.at.localeCompare(a.at))
+    .sort((a, b) => a.order - b.order || b.at.localeCompare(a.at) || compareViews(a.view, b.view))
     .map(entry => entry.view)
 }

@@ -5,16 +5,15 @@ import { parse, stringify } from 'yaml'
 import type { ThreadRef, Topic, TopicStatus } from '../../shared/types'
 
 const FRONT_MATTER = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/
-const STATUSES: TopicStatus[] = ['inbox', 'open', 'done']
+const STATUSES: TopicStatus[] = ['open', 'done']
 
 export function parseTopic(content: string, fallbackId: string): Topic | null {
   const match = FRONT_MATTER.exec(content)
   if (!match) return null
   const data = parse(match[1]) as Record<string, unknown> | null
   if (!data || typeof data !== 'object') return null
-  const status = STATUSES.includes(data.status as TopicStatus)
-    ? (data.status as TopicStatus)
-    : 'inbox'
+  // A note once waited in an inbox of its own: it is a task like any other now
+  const status = STATUSES.includes(data.status as TopicStatus) ? (data.status as TopicStatus) : 'open'
   return {
     id: typeof data.id === 'string' ? data.id : fallbackId,
     title: typeof data.title === 'string' ? data.title : fallbackId,
@@ -49,7 +48,7 @@ export function noteFromText(text: string, now: Date): Topic {
   return {
     id: `${stamp}-${slug || 'note'}`,
     title: first.trim(),
-    status: 'inbox',
+    status: 'open',
     links: [],
     threads: [],
     createdAt: now.toISOString(),

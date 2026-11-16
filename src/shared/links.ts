@@ -2,7 +2,7 @@
 
 export const FLUX_SCHEME = 'flux'
 
-export type RouteTab = 'queue' | 'active' | 'waiting' | 'notes' | 'wrapup' | 'daily'
+export type RouteTab = 'queue' | 'unstarted' | 'active' | 'waiting' | 'pulls' | 'wrapup' | 'daily'
 
 export type FluxRoute =
   | { kind: 'topic'; id: string }
@@ -12,9 +12,10 @@ export type FluxRoute =
 // The tab as the link spells it: the label the user reads, without accents or spaces
 const TAB_SLUG: Record<RouteTab, string> = {
   queue: 'file',
+  unstarted: 'a-demarrer',
   active: 'en-cours',
   waiting: 'attente',
-  notes: 'notes',
+  pulls: 'mes-pr',
   wrapup: 'wrap-up',
   daily: 'daily',
 }

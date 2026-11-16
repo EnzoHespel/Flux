@@ -339,7 +339,6 @@ function registerIpc(): void {
     if (!view) throw new Error(`Sujet introuvable : ${id}`)
     const topic = requireTopic(id)
     topic.threads.push(await launchThread(view, action))
-    if (topic.status === 'inbox') topic.status = 'open'
     await flux.saveTopic(topic)
     setTimeout(() => void flux.refresh(), THREAD_SETTLE_MS)
   })
