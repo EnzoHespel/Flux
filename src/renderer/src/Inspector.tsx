@@ -2,7 +2,7 @@ import { ArrowUpRight, Check, PenLine } from 'lucide-react'
 import { useState } from 'react'
 import type { ThreadStatus, ThreadView, TopicView } from '../../shared/types'
 import { BrandIcon, brandOf } from './Brand'
-import { displayTitle } from './format'
+import { displayTitle, refLabel } from './format'
 import { Prose } from './Markdown'
 import { useDraft } from './useDraft'
 
@@ -84,7 +84,7 @@ export function Inspector({ view }: { view: TopicView }) {
                     />
                   </span>
                   <span className="row-text">
-                    <strong>{item.ref}</strong>
+                    <strong>{refLabel(item.ref)}</strong>
                     <small>{displayTitle(item.title)}</small>
                   </span>
                   <ArrowUpRight size={15} aria-hidden="true" className="row-go" />

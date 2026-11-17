@@ -1,31 +1,140 @@
-import { Play, RotateCcw, Sparkles, X } from 'lucide-react'
-import { useEffect, useState, type CSSProperties } from 'react'
+import { ChevronLeft, ChevronRight, Play, Sparkles, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { Spot } from './Spot'
 
-// Newest first, one line each: the id of the first entry marks what was read
-const ENTRIES: Array<{ id: string; date: string; text: string; scene?: string }> = [
+interface Entry {
+  id: string
+  date: string
+  name: string
+  // What it changes, in a sentence or two, above its animation
+  text: string
+  scene?: string
+}
+
+// Newest first: the id of the first entry marks what was read
+const ENTRIES: Entry[] = [
+  {
+    id: '2026-11-16-decoupage',
+    date: '16 nov.',
+    name: 'Nouveau découpage',
+    text: 'Chaque sujet a une seule place : À démarrer tant que tu n’y as pas touché, En cours dès que tu l’entames, conversation ou pas, et Attente s’il est bloqué ou attend quelqu’un d’autre, même avec une conversation.',
+    scene: 'split',
+  },
+  {
+    id: '2026-11-16-nouveautes',
+    date: '16 nov.',
+    name: 'Nouveautés',
+    text: 'Chaque nouveauté a sa page : ce qu’elle change, puis son animation, à voir en grand d’un clic.',
+  },
+  {
+    id: '2026-11-16-mes-pr',
+    date: '16 nov.',
+    name: 'Mes PR',
+    text: 'Un onglet pour toutes tes PR ouvertes, tous projets confondus : Open ou Draft, la CI, et où en est la review.',
+    scene: 'pulls',
+  },
+  {
+    id: '2026-11-16-journee',
+    date: '16 nov.',
+    name: 'Journée',
+    text: 'Daily et Wrap-up se rangent sous un même onglet, qui rouvre le dernier des deux.',
+    scene: 'day',
+  },
+  {
+    id: '2026-11-16-reviews',
+    date: '16 nov.',
+    name: 'Reviews faites',
+    text: 'Une review envoyée quitte la file et En cours, son thread avec, jusqu’à ce qu’on te la redemande.',
+    scene: 'reviews',
+  },
+  {
+    id: '2026-11-16-a-demarrer',
+    date: '16 nov.',
+    name: 'À démarrer',
+    text: 'À démarrer remplace Notes : ce que tu n’as pas encore touché. Et En cours garde le sujet que tu y ouvres.',
+    scene: 'unstarted',
+  },
+  {
+    id: '2026-11-16-figma',
+    date: '16 nov.',
+    name: 'Figma',
+    text: 'Figma rejoint tes outils : les commentaires qui t’attendent, une tâche par fichier, qui part une fois tout répondu.',
+    scene: 'figma',
+  },
+  {
+    id: '2026-11-13-prs',
+    date: '13 nov.',
+    name: 'PR sans ticket',
+    text: 'Tes PR sans ticket, comme les e2e, restent dans Mes sujets jusqu’au merge.',
+    scene: 'prs',
+  },
+  { id: '2026-11-13-columns', date: '13 nov.', name: 'Colonne du ticket', text: 'La colonne du ticket s’affiche sur sa carte.' },
+  {
+    id: '2026-11-13-todo',
+    date: '13 nov.',
+    name: 'Tickets à faire',
+    text: 'Les tickets à faire qui te sont assignés restent dans Mes sujets, après ceux en cours.',
+  },
+  {
+    id: '2026-11-13-parents',
+    date: '13 nov.',
+    name: 'Tickets parents',
+    text: 'Les tickets parents sortent de Flux, sauf si on te demande quelque chose dessus.',
+  },
   {
     id: '2026-11-13-sessions',
     date: '13 nov.',
-    text: 'Les conversations Claude restent En cours et se rouvrent depuis les liens du sujet',
+    name: 'Sessions Claude',
+    text: 'Les conversations Claude restent En cours et se rouvrent depuis les liens du sujet.',
     scene: 'sessions',
   },
-  { id: '2026-11-12-workspaces', date: '12 nov.', text: 'Espaces par produit, compte GitHub au choix, Jira en plus de Linear' },
-  { id: '2026-11-12-search', date: '12 nov.', text: 'Recherche ⌘K dans tout Flux' },
-  { id: '2026-11-12-links', date: '12 nov.', text: 'Clic droit : copier le lien source ou le lien Flux, qui rouvre Flux au bon endroit' },
-  { id: '2026-11-10-no-review', date: '10 nov.', text: 'Dépôts sans review : tes PR prêtes à livrer' },
-  { id: '2026-11-10-daily-workspace', date: '10 nov.', text: 'Un daily par espace, avec commits, réunions et stand-up' },
-  { id: '2026-11-10-calls', date: '10 nov.', text: 'Calls Granola rangés par type et par produit' },
-  { id: '2026-11-10-owner', date: '10 nov.', text: 'Attente coupée entre mon travail et mes contributions' },
-  { id: '2026-11-10-stores', date: '10 nov.', text: 'Erreurs app et avis des stores dans le Daily' },
-  { id: '2026-11-10-daily', date: '10 nov.', text: 'Daily refait, en blocs courts' },
-  { id: '2026-11-10-intentions', date: '10 nov.', text: 'Intentions du jour réordonnables' },
-  { id: '2026-11-10-health', date: '10 nov.', text: 'Santé prod d’un regard' },
-  { id: '2026-11-10-wrapup', date: '10 nov.', text: 'Wrap-up à la place de Dormant' },
-  { id: '2026-11-10-reviewed', date: '10 nov.', text: 'PR reviewées rangées en Attente' },
-  { id: '2026-11-10-refresh', date: '10 nov.', text: 'Bouton Tout actualiser' },
-  { id: '2026-11-09-flux', date: '9 nov.', text: 'Première version' },
+  {
+    id: '2026-11-12-workspaces',
+    date: '12 nov.',
+    name: 'Espaces',
+    text: 'Un espace par produit, le compte GitHub au choix, et Jira en plus de Linear.',
+  },
+  { id: '2026-11-12-search', date: '12 nov.', name: 'Recherche', text: '⌘K cherche dans tout Flux : sujets, refs et onglets.' },
+  {
+    id: '2026-11-12-links',
+    date: '12 nov.',
+    name: 'Liens Flux',
+    text: 'Clic droit : copier le lien source ou le lien Flux, qui rouvre Flux au bon endroit.',
+  },
+  { id: '2026-11-10-no-review', date: '10 nov.', name: 'Dépôts sans review', text: 'Dans un dépôt sans review, tes PR prêtes sont à livrer.' },
+  {
+    id: '2026-11-10-daily-workspace',
+    date: '10 nov.',
+    name: 'Un daily par espace',
+    text: 'Un daily par espace, avec les commits, les réunions et le stand-up.',
+  },
+  { id: '2026-11-10-calls', date: '10 nov.', name: 'Calls', text: 'Les calls Granola se rangent par type et par produit.' },
+  { id: '2026-11-10-owner', date: '10 nov.', name: 'Attente en deux', text: 'Attente coupée entre mon travail et mes contributions.' },
+  {
+    id: '2026-11-10-stores',
+    date: '10 nov.',
+    name: 'Erreurs et avis',
+    text: 'Les erreurs de l’app et les avis des stores arrivent dans le Daily.',
+  },
+  { id: '2026-11-10-daily', date: '10 nov.', name: 'Daily refait', text: 'Le Daily refait, en blocs courts.' },
+  { id: '2026-11-10-intentions', date: '10 nov.', name: 'Intentions du jour', text: 'Les intentions du jour se réordonnent.' },
+  { id: '2026-11-10-health', date: '10 nov.', name: 'Santé prod', text: 'La santé de la prod, d’un regard.' },
+  { id: '2026-11-10-wrapup', date: '10 nov.', name: 'Wrap-up', text: 'Le Wrap-up prend la place de Dormant.' },
+  { id: '2026-11-10-reviewed', date: '10 nov.', name: 'PR reviewées', text: 'Les PR que tu as reviewées se rangent en Attente.' },
+  { id: '2026-11-10-refresh', date: '10 nov.', name: 'Tout actualiser', text: 'Un bouton relit tout d’un coup, ⌘R au clavier.' },
+  { id: '2026-11-09-flux', date: '9 nov.', name: 'Première version', text: 'Première version de Flux.' },
 ]
+
+// The entries by day, each with its place in the whole list
+const DAYS = ENTRIES.reduce<Array<{ date: string; entries: Array<{ entry: Entry; index: number }> }>>(
+  (days, entry, index) => {
+    const last = days[days.length - 1]
+    if (last?.date === entry.date) last.entries.push({ entry, index })
+    else days.push({ date: entry.date, entries: [{ entry, index }] })
+    return days
+  },
+  [],
+)
 
 const READ_KEY = 'flux.changelogRead'
 
@@ -45,82 +154,142 @@ function saveMark(id: string): void {
   }
 }
 
-// The scenes of what was not read yet, else the latest one
-function freshScenes(read: string | null): string[] {
-  const unread = read === null ? ENTRIES : ENTRIES.slice(0, Math.max(0, ENTRIES.findIndex(entry => entry.id === read)))
-  const scenes = [...new Set(unread.flatMap(entry => (entry.scene ? [entry.scene] : [])))]
-  return scenes.length > 0 ? scenes : ENTRIES.flatMap(entry => (entry.scene ? [entry.scene] : [])).slice(0, 1)
+// What came after the last visit; on a first visit, the latest day
+function unreadOf(read: string | null): Set<string> {
+  const unread =
+    read === null
+      ? ENTRIES.filter(entry => entry.date === ENTRIES[0].date)
+      : ENTRIES.slice(0, Math.max(0, ENTRIES.findIndex(entry => entry.id === read)))
+  return new Set(unread.map(entry => entry.id))
 }
 
-function reducedMotion(): boolean {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
-
-type View = { kind: 'spot'; playlist: string[]; take: number } | { kind: 'list' }
-
-function ChangelogModal({ fresh, onClose }: { fresh: string[]; onClose(): void }) {
-  // With reduced motion nothing plays by itself: the list opens, and a scene plays when asked
-  const [view, setView] = useState<View>(() =>
-    reducedMotion() || fresh.length === 0 ? { kind: 'list' } : { kind: 'spot', playlist: fresh, take: 0 },
+function CloseButton({ onClose }: { onClose(): void }) {
+  return (
+    <button type="button" className="round small glass" aria-label="Fermer" title="Fermer" onClick={onClose}>
+      <X size={15} aria-hidden="true" />
+    </button>
   )
-  const play = (playlist: string[]) =>
-    setView(current => ({ kind: 'spot', playlist, take: current.kind === 'spot' ? current.take + 1 : 0 }))
+}
+
+// The names first; one opens on its page, with what it changes, its animation, and the way to
+// the next one. Escape steps back: out of fullscreen, then to the list, then out
+function ChangelogModal({ unread, onClose }: { unread: Set<string>; onClose(): void }) {
+  const [open, setOpen] = useState<number | null>(null)
+  const [full, setFull] = useState(false)
+  const rows = useRef<Array<HTMLButtonElement | null>>([])
+  const last = useRef<number | null>(null)
+  const entry = open === null ? null : ENTRIES[open]
+
+  const show = (index: number | null) => {
+    if (index !== null && (index < 0 || index >= ENTRIES.length)) return
+    if (index === null || !ENTRIES[index].scene) setFull(false)
+    if (open !== null) last.current = open
+    setOpen(index)
+  }
+
+  // Back on the list, the row of the page just left keeps the focus, and stays in view
+  useEffect(() => {
+    if (open === null && last.current !== null) rows.current[last.current]?.focus()
+  }, [open])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (full) setFull(false)
+        else if (open !== null) show(null)
+        else onClose()
+      } else if (open !== null && event.key === 'ArrowLeft') show(open - 1)
+      else if (open !== null && event.key === 'ArrowRight') show(open + 1)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  })
 
   return (
     <div className="scrim spot-scrim" onClick={onClose}>
       <div
-        className="spot-modal"
+        className={`news${entry ? ' detail' : ''}${full ? ' full' : ''}`}
         role="dialog"
         aria-modal="true"
-        aria-label="Nouveautés"
+        aria-label={entry ? `Nouveautés : ${entry.name}` : 'Nouveautés'}
         onClick={event => event.stopPropagation()}
       >
-        <header className="spot-modal-head">
-          <h2>Nouveautés</h2>
-          <button type="button" className="round small glass" aria-label="Fermer" title="Échap" onClick={onClose}>
-            <X size={15} aria-hidden="true" />
-          </button>
-        </header>
-        {view.kind === 'spot' ? (
-          <Spot key={view.take} playlist={view.playlist} onEnd={() => setView({ kind: 'list' })} />
-        ) : (
-          <div className="spot-list">
-            <ul>
-              {ENTRIES.map((entry, index) => {
-                const scene = entry.scene
-                return (
-                  <li key={entry.id} style={{ '--n': index } as CSSProperties}>
-                    <span className="spot-list-date">{entry.date}</span>
-                    <span className="spot-list-text">{entry.text}</span>
-                    {scene && (
+        <div className="news-list" hidden={entry !== null}>
+          <header className="news-bar">
+            <h2>Nouveautés</h2>
+            <CloseButton onClose={onClose} />
+          </header>
+          <div className="news-scroll">
+            {DAYS.map(day => (
+              <section key={day.date} className="news-day" aria-label={day.date}>
+                <h3>{day.date}</h3>
+                <ul>
+                  {day.entries.map(({ entry: item, index }) => (
+                    <li key={item.id}>
                       <button
                         type="button"
-                        className="round small glass"
-                        aria-label={`Voir : ${entry.text}`}
-                        title="Voir la scène"
-                        onClick={() => play([scene])}
+                        ref={element => void (rows.current[index] = element)}
+                        className="news-row"
+                        onClick={() => show(index)}
                       >
-                        <Play size={13} aria-hidden="true" />
+                        <span className="news-name">{item.name}</span>
+                        {unread.has(item.id) && <span className="news-new">Nouveau</span>}
+                        {item.scene && (
+                          <span className="news-motion" title="Avec son animation">
+                            <Play size={11} aria-hidden="true" />
+                          </span>
+                        )}
+                        <ChevronRight size={15} className="news-go" aria-hidden="true" />
                       </button>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-            {fresh.length > 0 && (
-              <button type="button" className="pill glass small" onClick={() => play(fresh)}>
-                <RotateCcw size={14} aria-hidden="true" />
-                Revoir la présentation
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        </div>
+
+        {entry && open !== null && (
+          <div className="news-detail" key={entry.id}>
+            <header className="news-bar">
+              <button type="button" className="pill glass small" onClick={() => show(null)}>
+                <ChevronLeft size={15} aria-hidden="true" />
+                Nouveautés
               </button>
-            )}
+              <div className="news-nav">
+                <button
+                  type="button"
+                  className="round small glass"
+                  aria-label="Nouveauté précédente"
+                  title="Précédente (←)"
+                  disabled={open === 0}
+                  onClick={() => show(open - 1)}
+                >
+                  <ChevronLeft size={15} aria-hidden="true" />
+                </button>
+                <span className="news-count">
+                  {open + 1} / {ENTRIES.length}
+                </span>
+                <button
+                  type="button"
+                  className="round small glass"
+                  aria-label="Nouveauté suivante"
+                  title="Suivante (→)"
+                  disabled={open === ENTRIES.length - 1}
+                  onClick={() => show(open + 1)}
+                >
+                  <ChevronRight size={15} aria-hidden="true" />
+                </button>
+                <CloseButton onClose={onClose} />
+              </div>
+            </header>
+            <div className="news-copy">
+              <p className="news-date">{entry.date}</p>
+              <h1>{entry.name}</h1>
+              <p className="news-text">{entry.text}</p>
+            </div>
+            {entry.scene && <Spot key={entry.id} scene={entry.scene} full={full} onFull={setFull} />}
           </div>
         )}
       </div>
@@ -129,8 +298,8 @@ function ChangelogModal({ fresh, onClose }: { fresh: string[]; onClose(): void }
 }
 
 export function Changelog() {
-  // The scenes to play are chosen when the panel opens, before it marks everything read
-  const [open, setOpen] = useState<string[] | null>(null)
+  // What is new is read when the panel opens, before it marks everything read
+  const [open, setOpen] = useState<Set<string> | null>(null)
   const [read, setRead] = useState(readMark)
   const latest = ENTRIES[0].id
 
@@ -142,7 +311,7 @@ export function Changelog() {
         aria-label="Nouveautés"
         title="Nouveautés"
         onClick={() => {
-          setOpen(freshScenes(read))
+          setOpen(unreadOf(read))
           saveMark(latest)
           setRead(latest)
         }}
@@ -150,7 +319,7 @@ export function Changelog() {
         <Sparkles size={16} aria-hidden="true" />
         {read !== latest && <span className="unread" aria-label="Nouveautés à voir" />}
       </button>
-      {open && <ChangelogModal fresh={open} onClose={() => setOpen(null)} />}
+      {open && <ChangelogModal unread={open} onClose={() => setOpen(null)} />}
     </>
   )
 }

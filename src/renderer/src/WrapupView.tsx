@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { RANKS } from '../../shared/ranks'
 import type { WrapupDone, WrapupFocus, WrapupOutcome, WrapupView as Wrapup } from '../../shared/types'
-import { clock, displayTitle, waitingFor } from './format'
+import { clock, displayTitle, refLabel, waitingFor } from './format'
 import { menuOfLine, showMenu } from './navigation'
 import { rankStyle } from './rankStyle'
 
@@ -42,7 +42,7 @@ function Row({ line, checked, locked, meta, side, accent, onCheck, onOpen }: Row
         <span className="check-title">
           {line.ref && (
             <span className="check-ref" style={accent ? { color: accent } : undefined}>
-              {line.ref}
+              {refLabel(line.ref)}
             </span>
           )}
           {displayTitle(line.title)}
@@ -66,7 +66,15 @@ function subtitle(wrapup: Wrapup): string {
   return [done, when].filter(Boolean).join(' · ')
 }
 
-export function WrapupView({ wrapup, onOpen }: { wrapup: Wrapup; onOpen(topicId: string): void }) {
+export function WrapupView({
+  wrapup,
+  onOpen,
+  nav,
+}: {
+  wrapup: Wrapup
+  onOpen(topicId: string): void
+  nav?: ReactNode
+}) {
   // The box answers at once; the state pushed back by the main process takes over
   const [pending, setPending] = useState<Record<string, boolean>>({})
   useEffect(() => setPending({}), [wrapup])
@@ -83,6 +91,7 @@ export function WrapupView({ wrapup, onOpen }: { wrapup: Wrapup; onOpen(topicId:
   return (
     <main className="page">
       <div className="page-column wrapup">
+        {nav}
         <header className="wrapup-head">
           <h1>{wrapup.slot ? `Wrap-up de ${wrapup.slot}` : 'Wrap-up'}</h1>
           <p>{subtitle(wrapup)}</p>

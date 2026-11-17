@@ -8,6 +8,15 @@ export function allWorkspaces(): Workspace[] {
   return current
 }
 
+// Repo names (as in app#12) where my PRs need no review, across every workspace
+export function noReviewRepos(): Set<string> {
+  return new Set(
+    current.flatMap(workspace =>
+      (workspace.github.noReview ?? []).map(repo => (repo.split('/').at(-1) ?? repo).toLowerCase()),
+    ),
+  )
+}
+
 export function setWorkspaces(workspaces: Workspace[]): void {
   current = workspaces
 }

@@ -1,4 +1,5 @@
-import type { ActionKind, Item, Rank, Signal } from '../../shared/types'
+import { figmaRef } from '../../shared/figma'
+import type { ActionKind, CommentLine, Item, Rank, Signal } from '../../shared/types'
 import { CONFIG } from '../config'
 import { CLOSED_STATE_TYPES, projectOfKey, roleOf, statusKey, type StatusRules } from '../../shared/statuses'
 import type { TrackerName } from '../../shared/trackers'
@@ -82,6 +83,8 @@ export interface Ticket {
   tracker?: TrackerName
   // Jira: in a running sprint or not; left out where the project runs no sprint
   inSprint?: boolean
+  // Linear: split into sub-tickets, which carry the work
+  hasSubIssues?: boolean
 }
 
 export interface RankContext {
@@ -148,19 +151,26 @@ function signal(
   return { id: `${ref}:${suffix}`, rank, weight, detail, action, since, stamp }
 }
 
+// I have put my hands on it: a review being written, my own PR, a ticket under way
+function begun(entry: Signal): Signal {
+  return { ...entry, stage: 'started' }
+}
+
 function pendingReviewSignal(pr: PullRequest, ref: string, { now }: RankContext): Signal | null {
   const pending = pr.pendingReview
   if (!pending) return null
   const quietMinutes = (now.getTime() - new Date(pending.updatedAt).getTime()) / 60_000
   if (quietMinutes < PENDING_QUIET_MINUTES) return null
-  return signal(
-    ref,
-    'pending-review',
-    0,
-    `${plural(pending.comments, 'commentaire')} non soumis`,
-    'submit-review',
-    pending.createdAt,
-    pending.updatedAt,
+  return begun(
+    signal(
+      ref,
+      'pending-review',
+      0,
+      `${plural(pending.comments, 'commentaire')} non soumis`,
+      'submit-review',
+      pending.createdAt,
+      pending.updatedAt,
+    ),
   )
 }
 
@@ -263,6 +273,20 @@ function theirSignals(pr: PullRequest, ref: string, ctx: RankContext): Signal[] 
   return []
 }
 
+// Where one of my PRs stands, in the words of the file; no rank while it waits on the reviewers
+export function pullStatus(pr: PullRequest, ctx: RankContext): { status: string; rank: Rank | null } {
+  const ref = prRef(pr.repo, pr.number)
+  if (BLOCKED_TITLE.test(pr.title)) return { status: 'Bloquée', rank: null }
+  // A draft says so on its own badge: its status is what comes next
+  const mine = pr.isDraft ? [] : mineSignals(pr, ref, ctx)
+  const lead = [pendingReviewSignal(pr, ref, ctx), ...mine].find(entry => entry !== null)
+  if (lead) return { status: lead.detail, rank: lead.rank }
+  if (pr.ci === 'PENDING' || pr.ci === 'EXPECTED') return { status: 'CI en cours', rank: null }
+  if (pr.isDraft) return { status: 'Pas encore en review', rank: null }
+  if (pr.reviewDecision === 'APPROVED') return { status: 'Approuvée', rank: null }
+  return { status: 'En attente de review', rank: null }
+}
+
 export function itemFromPullRequest(pr: PullRequest, ctx: RankContext): Item {
   const ref = prRef(pr.repo, pr.number)
   const refs = [ref, ...ticketKeys(`${pr.title} ${pr.headRefName}`)]
@@ -284,15 +308,27 @@ export function itemFromPullRequest(pr: PullRequest, ctx: RankContext): Item {
   const blocked = BLOCKED_TITLE.test(pr.title)
   const stale = ageDays(pr.updatedAt, ctx.now) > DORMANT_DAYS
   if (!blocked) {
-    if (base.mine && !stale) signals.push(...mineSignals(pr, ref, ctx))
-    if (!base.mine) signals.push(...theirSignals(pr, ref, ctx))
+    // My open PR is work under way, whatever it waits on; a review asked of me is, once I write it
+    if (base.mine && !stale) signals.push(...mineSignals(pr, ref, ctx).map(begun))
+    if (!base.mine) signals.push(...theirSignals(pr, ref, ctx).map(entry => (pr.pendingReview ? begun(entry) : entry)))
+  }
+  // My PR with no ticket behind it, end-to-end tests for instance: no ticket state keeps it among my
+  // topics, so the PR itself does until it lands
+  if (base.mine && !blocked && !stale && refs.length === 1 && signals.length === 0) {
+    signals.push(begun(signal(ref, 'open', 6, 'PR ouverte', 'fix-pr', pr.updatedAt)))
   }
 
   const ball = signals.length > 0 ? 'me' : blocked || stale ? 'dormant' : 'others'
-  return { ...base, terminal: false, ball, signals }
+  // A review still being written is not done, even after an earlier one
+  const reviewed = !base.mine && pr.reviewedAt !== null && pr.pendingReview === null && signals.length === 0
+  return { ...base, terminal: false, ball, signals, ...(reviewed ? { reviewed } : {}) }
 }
 
 export { CLOSED_STATE_TYPES }
+// Blocked, or with another reviewer: still asking something of me, but nothing to start
+const HELD_STATES = new Set(['to unblock', 'technical review'])
+// Planned for today, not started yet
+const PLANNED_STATE = 'todo today'
 const BUG_LABELS = /sentry|bug/i
 
 export function itemFromTicket(ticket: Ticket, ctx: RankContext): Item {
@@ -326,27 +362,61 @@ export function itemFromTicket(ticket: Ticket, ctx: RankContext): Item {
     signals.push(signal(ref, `${suffix}:${notice.id}`, 3, `${who} : ${notice.excerpt}`, 'question', notice.at))
   }
 
-  if (ticket.assignedToMe) {
+  // A parent ticket follows its sub-tickets: its own state asks nothing of me
+  if (ticket.assignedToMe && !ticket.hasSubIssues) {
     const action = ticket.labels.some(label => BUG_LABELS.test(label)) ? 'diagnostic' : 'ticket'
+    const name = statusKey(ticket.stateName)
     if (role === 'question') {
-      const ask = statusKey(ticket.stateName) === 'to frame' ? 'cadrage' : 'question'
-      signals.push(signal(ref, 'state-question', 3, ticket.stateName, ask, ticket.updatedAt))
+      const ask = name === 'to frame' ? 'cadrage' : 'question'
+      const question = signal(ref, 'state-question', 3, ticket.stateName, ask, ticket.updatedAt)
+      signals.push(HELD_STATES.has(name) ? { ...question, stage: 'held' } : question)
     } else if (role === 'ready') {
-      signals.push(signal(ref, 'state-ready', 4, 'Prêt à déployer', 'ship', ticket.updatedAt))
+      signals.push(begun(signal(ref, 'state-ready', 4, 'Prêt à déployer', 'ship', ticket.updatedAt)))
     } else if (role === 'mine') {
-      signals.push(signal(ref, 'state-own', 6, ticket.stateName, action, ticket.updatedAt))
+      const own = signal(ref, 'state-own', 6, ticket.stateName, action, ticket.updatedAt)
+      signals.push(name === PLANNED_STATE ? own : begun(own))
     } else if (role === 'todo') {
       // Assigned and not started yet: still yours, after what is already under way
       signals.push(signal(ref, 'state-todo', 6, ticket.stateName, action, ticket.updatedAt, ticket.updatedAt, 1))
     }
   }
 
-  // A backlog is parked work, neither waiting on anyone nor to pick up: only a request brings it back,
-  // mine to someone else included
+  // A backlog is parked work, neither waiting on anyone nor to pick up, and so is a parent ticket:
+  // only a request brings it back, mine to someone else included
   const asked = ticket.asked && ticket.asked.awaitsReply !== false ? ticket.asked : undefined
-  const parked = role === 'parked'
+  const parked = role === 'parked' || ticket.hasSubIssues === true
   const stale = ageDays(ticket.updatedAt, ctx.now) > DORMANT_DAYS
   const ball = signals.length > 0 ? 'me' : asked ? 'others' : parked ? 'parked' : stale ? 'dormant' : 'others'
   const line = asked ? { asked: { excerpt: asked.excerpt, at: asked.at, url: asked.url } } : {}
   return { ...base, terminal: false, ball, signals, ...line }
+}
+
+// A Figma file whose comments Flux read
+export interface FigmaFile {
+  key: string
+  name: string
+  url: string
+  // When Flux last read its comments
+  readAt: string
+  // A thread of the file involves me: I wrote in it, or someone named me
+  involved: boolean
+  // The threads waiting on my answer, newest first
+  pending: CommentLine[]
+}
+
+// One task per file, listing its comments; once all are answered the file is done and its topic closes
+export function itemFromFigmaFile(file: FigmaFile): Item {
+  const ref = figmaRef(file.key)
+  const base = { ref, refs: [ref], kind: 'figma' as const, title: file.name, url: file.url, mine: false }
+  if (file.pending.length === 0) return { ...base, terminal: true, ball: 'others', signals: [] }
+  const times = file.pending.map(comment => comment.at).sort()
+  const detail = `${plural(file.pending.length, 'commentaire')} Figma`
+  return {
+    ...base,
+    terminal: false,
+    ball: 'me',
+    // Waiting since the oldest comment; the newest one notifies
+    signals: [signal(ref, 'comments', 3, detail, 'figma', times[0], times[times.length - 1])],
+    comments: file.pending,
+  }
 }

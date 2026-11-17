@@ -26,11 +26,13 @@ import { Daily, localDate } from './llm/daily'
 import { createDailySkill, useDailyTemplate } from './llm/dailySkillBrief'
 import { Triage } from './llm/triage'
 import { notificationAccess, requestNotificationAccess } from './notificationAccess'
-import { checkCalendarUrl, checkGithub, checkJira, checkLinearKey, normalizeJiraSite } from './onboarding'
-import { ARCHIVE_DIR, DAILY_DIR, REPOS_DIR, THREADS_DIR, TOPICS_DIR } from './paths'
+import { checkCalendarUrl, checkFigma, checkGithub, checkJira, checkLinearKey, normalizeJiraSite } from './onboarding'
+import { ARCHIVE_DIR, DAILY_DIR, FIGMA_FILE, REPOS_DIR, THREADS_DIR, TOPICS_DIR } from './paths'
 import { fetchCalendar, fetchCalendarBetween } from './sources/calendar'
 import { fetchGitActivity } from './sources/commits'
-import { GITHUB_HOST, listGithubAccounts, listRecentRepos } from './sources/github'
+import { fetchMyPulls, GITHUB_HOST, listGithubAccounts, listRecentRepos } from './sources/github'
+import { PullBoard } from './engine/pulls'
+import { FigmaScanner } from './sources/figma'
 import { fetchJira, listJiraProjects, listJiraStatuses } from './sources/jira'
 import { fetchCompleted, fetchLinear, listLinearStatuses, listLinearTeams } from './sources/linear'
 import { fetchStoreReviews } from './sources/stores'
@@ -41,6 +43,7 @@ import { adoptThreads } from './threads/desktop'
 import { goToThread, launchThread } from './threads/launch'
 import { allWorkspaces } from './workspaces'
 import { desktopOf } from './threads/sessions'
+import { noReviewRepos } from './workspaces'
 
 const THREAD_SETTLE_MS = 6_000
 
@@ -360,7 +363,10 @@ function syncDailies(): void {
   for (const workspace of workspaces) daily.sync(now, workspace.id)
 }
 
+const pulls = new PullBoard(fetchMyPulls, noReviewRepos)
+
 function registerIpc(): void {
+  ipcMain.handle('flux:my-pulls', (_event, force: boolean) => pulls.get(settings.values.githubAccount, force))
   ipcMain.handle('flux:get-state', () => flux.current())
   ipcMain.handle('flux:refresh', async () => {
     await Promise.all([flux.refresh(), calls.sync(true)])
@@ -403,7 +409,6 @@ function registerIpc(): void {
     if (!view) throw new Error(`Sujet introuvable : ${id}`)
     const topic = requireTopic(id)
     topic.threads.push(await launchThread(view, action))
-    if (topic.status === 'inbox') topic.status = 'open'
     await flux.saveTopic(topic)
     setTimeout(() => void flux.refresh(), THREAD_SETTLE_MS)
   })
@@ -473,6 +478,7 @@ function registerIpc(): void {
   ipcMain.handle('flux:check-jira', (_event, site: string, email: string, token: string) =>
     checkJira(site, email, token),
   )
+  ipcMain.handle('flux:check-figma', (_event, token: string, teams: string[]) => checkFigma(token, teams))
   ipcMain.handle('flux:list-projects', () => listProjects())
   ipcMain.handle('flux:list-statuses', () => listStatuses())
   ipcMain.handle('flux:check-calendar-url', (_event, url: string) => checkCalendarUrl(url))
@@ -511,6 +517,7 @@ async function main(): Promise<void> {
   await app.whenReady()
   settings = new SettingsStore()
   const triage = new Triage()
+  const figma = new FigmaScanner(FIGMA_FILE)
   daily = new Daily(
     state => flux.setDaily(state),
     () => notifyDaily(),
@@ -539,6 +546,10 @@ async function main(): Promise<void> {
       const tickets = await fetchLinear(key, keys)
       await triage.apply(tickets)
       return tickets
+    },
+    fetchFigma: async followed => {
+      const access = settings.figma()
+      return access ? figma.step(access.token, access.teams, followed, new Date()) : null
     },
     fetchJira: async (keys, projects) => {
       const token = settings.secret('jiraToken')

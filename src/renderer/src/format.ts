@@ -1,3 +1,4 @@
+import { figmaKey } from '../../shared/figma'
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
@@ -24,7 +25,7 @@ export function until(iso: string, now = Date.now()): string {
 // renaming edits the text and keeps the prefix, which ties the topic to its source
 export function splitTitle(title: string): { prefix: string; text: string } {
   const plain = title
-    .replace(/^(?:[a-z0-9_-]+#\d+|[A-Z]{2,5}-\d+) — /, '')
+    .replace(/^(?:[a-z0-9_-]+#\d+|[A-Z]{2,5}-\d+|figma:[A-Za-z0-9]+) — /, '')
     .replace(/^(?:\[[^\]]+\]\s*)+/, '')
     .replace(/^[a-z]+(?:\([^)]*\))?!?:\s*/, '')
   if (!plain) return { prefix: '', text: title }
@@ -36,3 +37,8 @@ export function displayTitle(title: string): string {
 }
 
 export { markedBlocked } from '../../shared/titles'
+
+// How a ref reads on screen: a Figma file goes by the tool, its key says nothing
+export function refLabel(ref: string): string {
+  return figmaKey(ref) ? 'Figma' : ref
+}

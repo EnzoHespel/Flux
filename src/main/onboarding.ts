@@ -6,6 +6,8 @@ import { calendarUrl, fetchCalendar } from './sources/calendar'
 import { checkJira as readJiraUser } from './sources/jira'
 import { GITHUB_HOST, tokenArgs } from './sources/github'
 
+export { checkFigma } from './sources/figma'
+
 const LINEAR_ENDPOINT = 'https://api.linear.app/graphql'
 
 function failure(error: unknown): CheckResult {

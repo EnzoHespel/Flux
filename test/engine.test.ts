@@ -9,7 +9,7 @@ import {
   type PullRequest,
   type Ticket,
 } from '../src/main/engine/rank'
-import { compareViews, reconcile } from '../src/main/engine/ball'
+import { activeViews, compareViews, reconcile } from '../src/main/engine/ball'
 import { decide, EMPTY_NOTIFY_STATE, type NotifyContext } from '../src/main/engine/notify'
 import type { Item, Topic, TopicView } from '../src/shared/types'
 import { noteFromText, parseTopic, serializeTopic } from '../src/main/store/topics'
@@ -111,6 +111,23 @@ describe('règles unitaires', () => {
     const draft = pr({ author: ME, repo: 'app', isDraft: true })
     const item = itemFromPullRequest(draft, { ...context, noReview: new Set(['app']) })
     expect(item.signals[0]).toMatchObject({ rank: 6, detail: 'Brouillon' })
+  })
+
+  it('garde dans mes sujets ma PR ouverte sans ticket, jusqu’à son merge', () => {
+    const e2e = { title: 'ci(e2e): réutiliser le build', headRefName: 'ci/e2e-build-cache' }
+    const item = itemFromPullRequest(pr(e2e), context)
+    expect(item).toMatchObject({ ball: 'me', refs: ['mobile#1'] })
+    expect(item.signals).toEqual([expect.objectContaining({ rank: 6, detail: 'PR ouverte', action: 'fix-pr' })])
+    const created = reconcile([], [item], [], NOW).created
+    expect(created.map(topic => topic.links)).toEqual([['mobile#1']])
+
+    // Something to do on it takes over, a ticket keeps its own place, and only my PRs count
+    expect(itemFromPullRequest(pr({ ...e2e, ci: 'FAILURE' }), context).signals.map(s => s.detail)).toEqual(['CI en échec'])
+    expect(itemFromPullRequest(pr({ ...e2e, headRefName: 'feature/app-12-e2e' }), context).ball).toBe('others')
+    expect(itemFromPullRequest(pr({ ...e2e, author: 'sam' }), context).signals).toEqual([])
+    // Left aside for long, it goes to the wrap-up like any other
+    expect(itemFromPullRequest(pr({ ...e2e, updatedAt: '2026-10-01T09:00:00Z' }), context).ball).toBe('dormant')
+    expect(itemFromPullRequest(pr({ ...e2e, state: 'MERGED' }), context).terminal).toBe(true)
   })
 
   it("n'alerte pas sur une review en cours de rédaction", () => {
@@ -379,6 +396,15 @@ describe('tickets', () => {
     expect(ball({ stateName: 'Todo Weekly', stateType: 'unstarted', assignedToMe: false })).toBe('others')
   })
 
+  it('garde dans ma file un ticket à faire qui m’est assigné, après ceux en cours', () => {
+    const todo = itemFromTicket(ticket({ stateName: 'Todo Weekly', stateType: 'unstarted' }), context)
+    expect(todo.ball).toBe('me')
+    expect(todo.signals[0]).toMatchObject({ rank: 6, weight: 1, detail: 'Todo Weekly' })
+    const started = itemFromTicket(ticket({ stateName: 'In Progress', stateType: 'started' }), context)
+    expect(started.signals[0].weight).toBeLessThan(todo.signals[0].weight)
+    expect(todo.state).toBe('Todo Weekly')
+  })
+
   it('garde en attente un ticket où ma question attend une réponse, backlog compris', () => {
     const asked = { id: 'm1', excerpt: 'Tu valides ?', text: 'Tu valides ?', at: '2026-11-05T10:00:00Z', url: 'https://linear.test/m1' }
     const waiting = itemFromTicket(ticket({ stateName: 'Backlog', assignedToMe: false, asked }), context)
@@ -463,6 +489,18 @@ describe('rapprochement sujets / signaux', () => {
     ])
   })
 
+  it('range un ticket parent hors de Flux, même en cours, sauf si on me demande quelque chose', () => {
+    const parent = (overrides: Partial<Ticket> = {}) =>
+      itemFromTicket(ticket({ stateName: 'In Progress', stateType: 'started', hasSubIssues: true, ...overrides }), context)
+    expect(parent()).toMatchObject({ ball: 'parked', signals: [] })
+    expect(parent({ stateName: 'To frame', stateType: 'unstarted' }).ball).toBe('parked')
+    const mention = { id: 'p', kind: 'mention' as const, author: 'camille.martin', excerpt: 'on découpe comment ?', text: 'on découpe comment ?', at: '2026-11-05T17:25:00Z', url: 'https://linear.test/p' }
+    expect(parent({ notices: [mention] }).ball).toBe('me')
+    const asked = { id: 'q', excerpt: 'Tu valides le séquencement ?', text: 'Tu valides le séquencement ?', at: '2026-11-05T10:00:00Z', url: 'https://linear.test/q' }
+    expect(parent({ asked }).ball).toBe('others')
+    expect(itemFromTicket(ticket({ stateName: 'In Progress', stateType: 'started' }), context).ball).toBe('me')
+  })
+
   it('ne crée pas de sujet pour ce qui attend les autres', () => {
     const item = itemFromPullRequest(pr({ author: 'sam-lee' }), context)
     expect(reconcile([], [item], [], NOW).created).toEqual([])
@@ -512,6 +550,31 @@ describe('rapprochement sujets / signaux', () => {
       NOW,
     )
     expect(result.views[0].rank).toBe(5)
+  })
+
+  it('ferme le sujet d’une review faite, même avec son thread inactif, et le rouvre à la demande suivante', () => {
+    const thread = { session: 's1', name: 'review', cwd: '/', startedAt: '2026-11-06T09:00:00Z' }
+    const theirs = { author: 'sam-lee', title: '[APP-9] feat(network): pause', headRefName: 'feature/app-9' }
+    const done = itemFromPullRequest(pr({ ...theirs, reviewedAt: '2026-11-06T10:00:00Z' }), context)
+    const other = { ...ticketItem(), ref: 'APP-9', refs: ['APP-9'], mine: false, signals: [], ball: 'others' as const }
+    expect(done.reviewed).toBe(true)
+    const review = topic({ links: ['mobile#1', 'APP-9'], threads: [thread] })
+    const idle = [{ session: 's1', status: 'idle' as const }]
+    expect(reconcile([review], [done, other], idle, NOW).closed).toEqual(['t1'])
+    // Still running, or a review left unsubmitted: not done yet
+    expect(reconcile([review], [done, other], [{ session: 's1', status: 'busy' }], NOW).closed).toEqual([])
+    const drafting = itemFromPullRequest(
+      pr({ ...theirs, reviewedAt: '2026-11-06T10:00:00Z', pendingReview: { createdAt: NOW.toISOString(), updatedAt: NOW.toISOString(), comments: 1 } }),
+      context,
+    )
+    expect(reconcile([review], [drafting, other], idle, NOW).closed).toEqual([])
+
+    const closed = { ...review, status: 'done' as const, closedAt: '2026-11-06T11:00:00Z' }
+    const asked = itemFromPullRequest(
+      pr({ ...theirs, reviewedAt: '2026-11-06T10:00:00Z', reviewRequested: true, requestedAt: '2026-11-06T11:30:00Z' }),
+      context,
+    )
+    expect(reconcile([closed], [asked, other], idle, NOW).reopened).toEqual(['t1'])
   })
 
   it('montre un thread Desktop pas encore envoyé comme en attente, sans signal', () => {
@@ -567,6 +630,7 @@ const view = (id: string, signalId: string, stamp: string, rank: 1 | 4 = 1): Top
   threads: [],
   rank,
   ball: 'me',
+  stage: 'untouched',
   mine: true,
   since: stamp,
   actions: [],
@@ -577,6 +641,106 @@ const during = (iso: string, meeting: NotifyContext['meeting'] = null): NotifyCo
   meeting,
   workdayStart: 9,
   workdayEnd: 19,
+})
+
+describe('où en est ma part', () => {
+  const stageOf = (item: Item) => reconcile([], [item], [], NOW).views[0].stage
+  const fresh = { createdAt: NOW.toISOString(), updatedAt: NOW.toISOString(), comments: 1 }
+  const asked = { author: 'sam-lee', reviewRequested: true, requestedAt: '2026-11-06T08:00:00Z' }
+
+  it('laisse à démarrer ce que je n’ai pas touché', () => {
+    const todo = (stateName: string) => itemFromTicket(ticket({ stateName, stateType: 'unstarted' }), context)
+    const mention = itemFromTicket(
+      ticket({
+        stateName: 'In Review',
+        stateType: 'started',
+        notices: [
+          { id: 'a', kind: 'mention', author: 'camille', excerpt: 'ok ?', text: 'ok ?', at: '2026-11-05T17:00:00Z', url: '' },
+        ],
+      }),
+      context,
+    )
+    expect(['Todo', 'Todo Weekly', 'Todo Today', 'To frame'].map(name => stageOf(todo(name)))).toEqual([
+      'untouched',
+      'untouched',
+      'untouched',
+      'untouched',
+    ])
+    expect(stageOf(itemFromPullRequest(pr(asked), context))).toBe('untouched')
+    expect(stageOf(mention)).toBe('untouched')
+    expect(reconcile([topic({})], [], [], NOW).views[0].stage).toBe('untouched')
+  })
+
+  it('compte comme entamés mes PR ouvertes, un ticket en cours et une review commencée', () => {
+    const own = (stateName: string) => itemFromTicket(ticket({ stateName, stateType: 'started' }), context)
+    expect(stageOf(own('In Progress'))).toBe('started')
+    expect(stageOf(own('Personal Review'))).toBe('started')
+    expect(stageOf(itemFromTicket(ticket({ stateName: 'En cours', stateType: 'started', tracker: 'jira' }), context))).toBe(
+      'started',
+    )
+    expect(stageOf(itemFromPullRequest(pr({ ci: 'FAILURE', title: '[APP-1] feat' }), context))).toBe('started')
+    expect(stageOf(itemFromPullRequest(pr({ isDraft: true, title: '[APP-1] feat' }), context))).toBe('started')
+    // My PR without a ticket, with nothing else to do: still under way
+    expect(stageOf(itemFromPullRequest(pr({ headRefName: 'e2e/login' }), context))).toBe('started')
+    // A review I began writing a minute ago, before it counts as left unsubmitted
+    expect(stageOf(itemFromPullRequest(pr({ ...asked, pendingReview: fresh }), context))).toBe('started')
+  })
+
+  it('met en attente ce qui est bloqué ou chez un autre relecteur', () => {
+    const state = (stateName: string) => itemFromTicket(ticket({ stateName, stateType: 'started' }), context)
+    expect(stageOf(state('To unblock'))).toBe('held')
+    expect(stageOf(state('Technical review'))).toBe('held')
+    expect(reconcile([topic({ links: ['APP-1'], blocked: 'Décision produit' })], [ticketItem()], [], NOW).views[0].stage).toBe(
+      'held',
+    )
+    // Blocked, it waits even with a conversation; only Claude at work on it keeps it under way
+    const thread = { session: 's1', name: 'x', cwd: '/', startedAt: '2026-11-06T10:00:00Z' }
+    const talked = topic({ links: ['APP-1'], blocked: 'Nico explore une autre piste', threads: [thread] })
+    expect(reconcile([talked], [ticketItem()], [{ session: 's1', status: 'idle' }], NOW).views[0].stage).toBe('held')
+    expect(reconcile([talked], [ticketItem()], [{ session: 's1', status: 'busy' }], NOW).views[0].stage).toBe('started')
+  })
+
+  it('ne met jamais un sujet à la fois En cours et en Attente', () => {
+    const thread = (session: string) => ({ session, name: 'x', cwd: '/', startedAt: '2026-11-06T10:00:00Z' })
+    const waiting = itemFromPullRequest(pr({ number: 5, headRefName: 'feature/app-5', title: '[APP-5] feat' }), context)
+    const review = itemFromTicket(ticket({ key: 'APP-5', stateName: 'In Review', stateType: 'started' }), context)
+    const views = reconcile(
+      [
+        topic({ id: 'blocked', links: ['APP-1'], blocked: 'Nico explore une autre piste', threads: [thread('s1')] }),
+        topic({ id: 'in-review', links: ['mobile#5', 'APP-5'], threads: [thread('s2')] }),
+        topic({ id: 'talk', threads: [thread('s3')] }),
+      ],
+      [ticketItem(), waiting, review],
+      [{ session: 's3', status: 'idle' }],
+      NOW,
+    ).views
+    const active = activeViews(views).map(view => view.topic.id)
+    const held = views.filter(view => view.ball === 'others' || view.ball === 'dormant').map(view => view.topic.id)
+    expect(active).toEqual(['talk'])
+    expect(held.sort()).toEqual(['blocked', 'in-review'])
+  })
+
+  it('met dans En cours tout ce qui est entamé, les conversations d’abord puis dans l’ordre de la file', () => {
+    const thread = { session: 's1', name: 'x', cwd: '/', startedAt: '2026-11-06T10:00:00Z' }
+    const views = reconcile(
+      [
+        topic({ id: 'todo', links: ['APP-2'] }),
+        topic({ id: 'ci', links: ['mobile#4'] }),
+        topic({ id: 'ticket', links: ['APP-1'] }),
+        topic({ id: 'review', links: ['mobile#3'] }),
+        topic({ id: 'talk', threads: [thread] }),
+      ],
+      [
+        itemFromTicket(ticket({ key: 'APP-2', stateName: 'Todo', stateType: 'unstarted' }), context),
+        itemFromPullRequest(pr({ number: 4, ci: 'FAILURE', headRefName: 'e2e/ci' }), context),
+        ticketItem(),
+        itemFromPullRequest(pr({ number: 3, ...asked, headRefName: 'feature/app-9', pendingReview: fresh }), context),
+      ],
+      [{ session: 's1', status: 'idle' }],
+      NOW,
+    ).views
+    expect(activeViews(views).map(view => view.topic.id)).toEqual(['talk', 'review', 'ticket', 'ci'])
+  })
 })
 
 describe('notifications', () => {
@@ -685,6 +849,8 @@ describe('fichiers sujet', () => {
 
   it('ignore un fichier sans en-tête', () => {
     expect(parseTopic('juste du texte', 'x')).toBeNull()
+    // A note from the old inbox comes back as a task
+    expect(parseTopic('---\ntitle: Relire\nstatus: inbox\n---\n', 'n')?.status).toBe('open')
   })
 
   it('tire le titre et le corps de la capture', () => {
@@ -692,7 +858,7 @@ describe('fichiers sujet', () => {
     expect(note).toMatchObject({
       title: 'Relancer Sam sur l’écran',
       body: 'Il attend la spec',
-      status: 'inbox',
+      status: 'open',
     })
     expect(note.id).toMatch(/relancer-sam-sur-l-ecran$/)
   })

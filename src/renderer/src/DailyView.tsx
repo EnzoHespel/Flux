@@ -1,5 +1,5 @@
 import { GripVertical, PenLine, Plus, RefreshCw, X } from 'lucide-react'
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { countLabel, stars, STORE_LABEL, YESTERDAY_LABEL } from '../../shared/dailyLabels'
 import { DAILY_TEMPLATE } from '../../shared/dailyTemplate'
 import { RANKS } from '../../shared/ranks'
@@ -14,7 +14,7 @@ import type {
   StoreReview,
 } from '../../shared/types'
 import { BrandIcon, LinkIcon } from './Brand'
-import { clock, displayTitle } from './format'
+import { clock, displayTitle, refLabel } from './format'
 import { menuOfLine, showMenu } from './navigation'
 import { rankStyle } from './rankStyle'
 
@@ -85,11 +85,11 @@ function Pills({ refs }: { refs: RefPill[] }) {
             }}
           >
             <LinkIcon url={pill.url} size={11} />
-            {pill.ref}
+            {refLabel(pill.ref)}
           </button>
         ) : (
           <span key={pill.ref} className="ref-pill">
-            {pill.ref}
+            {refLabel(pill.ref)}
           </span>
         ),
       )}
@@ -533,7 +533,12 @@ function subtitle(sheet: DailySheet): string {
   return [date.charAt(0).toUpperCase() + date.slice(1), stamp].filter(Boolean).join(' · ')
 }
 
-export function DailyView({ daily, onOpen, onNote }: { daily: DailySheet } & LineActions) {
+export function DailyView({
+  daily,
+  onOpen,
+  onNote,
+  nav,
+}: { daily: DailySheet; nav?: ReactNode } & LineActions) {
   const actions = { onOpen, onNote }
   // Unknown until macOS answers: the button stays usable meanwhile
   const [hasObsidian, setHasObsidian] = useState<boolean | null>(null)
@@ -543,6 +548,7 @@ export function DailyView({ daily, onOpen, onNote }: { daily: DailySheet } & Lin
   return (
     <main className="page">
       <div className="page-column daily">
+        {nav}
         <header className="daily-head">
           <div>
             <h1>Daily</h1>

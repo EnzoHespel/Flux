@@ -342,6 +342,21 @@ export async function listRecentRepos(account: string | null, now = new Date()):
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name)
 }
 
+// My open PRs on the whole host, whatever the workspace
+export async function fetchMyPulls(account: string | null): Promise<{ me: string; pullRequests: PullRequest[] }> {
+  const data = await graphql<{ viewer: { login: string }; mine: { nodes: RawPullRequest[] } }>(
+    account,
+    `query($q: String!) {
+      viewer { login }
+      mine: search(query: $q, type: ISSUE, first: 50) { nodes { ...PR } }
+    }
+    ${FRAGMENT}`,
+    { q: 'is:pr is:open author:@me archived:false sort:updated-desc' },
+  )
+  const me = data.viewer.login
+  return { me, pullRequests: data.mine.nodes.map(raw => normalizePullRequest(raw, me)) }
+}
+
 // PRs of others I reviewed since a date, for a daily Flux kept no journal of
 export async function fetchReviewed(
   since: Date,

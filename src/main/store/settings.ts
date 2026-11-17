@@ -16,7 +16,7 @@ import {
   workspacesFromProjects,
 } from '../workspaces'
 
-type Secret = 'linearKey' | 'calendarUrl' | 'jiraToken' | 'granola'
+type Secret = 'linearKey' | 'calendarUrl' | 'jiraToken' | 'granola' | 'figmaToken'
 
 interface Stored {
   dailyTime: string
@@ -30,6 +30,7 @@ interface Stored {
   workspace: string | null
   jiraEmail: string
   jiraSite: string
+  figmaTeams: string[]
   // null until chosen: derived from the keys already saved
   trackers: TrackerName[] | null
   // null until chosen: Google when an iCal link is already saved, as before
@@ -51,6 +52,7 @@ const DEFAULTS: Stored = {
   workspace: null,
   jiraEmail: '',
   jiraSite: '',
+  figmaTeams: [],
   trackers: null,
   calendar: null,
   projects: null,
@@ -111,7 +113,16 @@ export class SettingsStore {
     const derived: TrackerName[] = []
     if (this.secrets.jiraToken || CONFIG.jira.site) derived.push('jira')
     if (this.secrets.linearKey) derived.push('linear')
+    if (this.secrets.figmaToken) derived.push('figma')
     return derived
+  }
+
+  // Figma reads comments only when chosen, with a token and at least one team
+  figma(): { token: string; teams: string[] } | null {
+    if (!this.uses('figma')) return null
+    const token = this.secret('figmaToken')
+    const teams = this.stored.figmaTeams
+    return token && teams.length > 0 ? { token, teams } : null
   }
 
   calendar(): CalendarName | null {
@@ -130,6 +141,7 @@ export class SettingsStore {
       hasLinearKey: Boolean(this.secrets.linearKey),
       hasCalendarUrl: Boolean(this.secrets.calendarUrl),
       hasJiraToken: Boolean(this.secrets.jiraToken),
+      hasFigmaToken: Boolean(this.secrets.figmaToken),
       jiraSite: this.jiraSite(),
       trackers: this.trackers(),
       calendar: this.calendar(),
@@ -147,7 +159,7 @@ export class SettingsStore {
   }
 
   apply(patch: SettingsPatch): void {
-    const { linearKey, calendarUrl, jiraToken, wrapupTimes, ...plain } = patch
+    const { linearKey, calendarUrl, jiraToken, figmaToken, wrapupTimes, ...plain } = patch
     this.stored = { ...this.stored, ...plain }
     if (wrapupTimes !== undefined) this.stored.wrapupTimes = normalizeTimes(wrapupTimes)
     writeJson(SETTINGS_FILE, this.stored)
@@ -156,6 +168,7 @@ export class SettingsStore {
       ['linearKey', linearKey],
       ['calendarUrl', calendarUrl],
       ['jiraToken', jiraToken],
+      ['figmaToken', figmaToken],
     ]
     for (const [name, value] of secrets) {
       if (value === undefined) continue
